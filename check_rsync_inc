@@ -1,0 +1,329 @@
+#!/usr/bin/perl -w
+
+##############################################################################
+#
+#                                 check_rsync_inc.pl
+#
+# DESCRIPTION:
+# Nagios module to check the state of a rsync-incremental-backup run.
+#
+##############################################################################
+
+##############################################################################
+#                                                                            #
+#                       CONFIDENTIAL & PROPRIETARY                           #
+#       Nothing herein is to be disclosed in any way without the prior       #
+#           express written permission of Pierre Rioux                       #
+#                                                                            #
+#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
+#                                                                            #
+##############################################################################
+#
+#    $Id$
+#
+#    $Log$
+
+##########################
+# Initialization section #
+##########################
+
+require 5.00;
+use strict;
+use vars qw( $VERSION $RCS_VERSION );
+use IO::File;
+use IO::Dir;
+sub MyDie;
+
+# Default umask
+umask 027;
+
+# Program's name and version number.
+$RCS_VERSION='$Id: blahblah.pl,v 3.0 2012/06/08 18:40:36 prioux Exp $';
+($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+my ($BASENAME) = ($0 =~ /([^\/]+)$/);
+
+# Get login name.
+my $USER=getpwuid($<) || getlogin || MyDie "Can't find USER from environment!\n";
+
+#########
+# Usage #
+#########
+
+sub Usage { # private
+    print "$BASENAME $VERSION\n";
+    print "Usage: $BASENAME -n name [-n name...] [-k max_num_inc] [-w duration_warning] [-c duration_critical] [-p cron_cycle] [-R prefix] incremental_root_dir [name] [name...]\n";
+    print "Durations are all in hours, and so is cron_cycle.\n";
+    exit 1;
+}
+
+##################################
+# Global variables and constants #
+##################################
+
+my $DEBUG=0;         # -v
+my @BAK_NAMES=();    # -n
+my $KEEPNUM=10;      # -k
+my $WARN_HOURS=2;    # -w
+my $CRIT_HOURS=4;    # -c
+my $CRON_CYCLE=24;   # -p
+my $PREFIX="";       # -R
+
+##############################
+# Parse command-line options #
+##############################
+
+for (;@ARGV;) {
+    # Add in the regex [] ALL single-character command-line options
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([vnkwcpR])(.*)$/);
+    last if ! defined $opt;
+    # Add in regex [] ONLY single-character options that
+    # REQUIRE an argument, except for the '@' debug switch.
+    if ($opt =~ /[nkwcpR]/ && $arg eq "") {
+        if (@ARGV < 2) {
+            print "Argument required for option \"$opt\".\n";
+            exit 1;
+        }
+        shift;
+        $arg=$ARGV[0];
+    }
+    $DEBUG++                                     if $opt eq 'v';
+    push(@BAK_NAMES,$arg)                        if $opt eq 'n';
+    $KEEPNUM=$arg                                if $opt eq 'k';
+    $WARN_HOURS=$arg                             if $opt eq 'w';
+    $CRIT_HOURS=$arg                             if $opt eq 'c';
+    $CRON_CYCLE=$arg                             if $opt eq 'p';
+    $PREFIX=$arg                                 if $opt eq 'R';
+    shift;
+}
+
+#################################
+# Validate command-line options #
+#################################
+
+&Usage if @ARGV < 1;
+my $INCREMENTAL_ROOT = shift;
+push(@BAK_NAMES,@ARGV) if @ARGV > 0;
+&Usage unless @BAK_NAMES > 0;
+&Usage if $WARN_HOURS !~ /^[1-9]\d*$/;
+&Usage if $CRIT_HOURS !~ /^[1-9]\d*$/;
+&Usage if $CRON_CYCLE !~ /^[1-9]\d*$/;
+
+################
+# Trap Signals #
+################
+
+sub SigCleanup { # private
+   MyDie "Received signal \"" . $_[0] . "\".\n";
+}
+$SIG{'INT'}  = \&SigCleanup;
+$SIG{'TERM'} = \&SigCleanup;
+$SIG{'HUP'}  = \&SigCleanup;
+$SIG{'QUIT'} = \&SigCleanup;
+$SIG{'PIPE'} = 'IGNORE';
+$SIG{'ALRM'} = \&SigCleanup;
+
+###############################
+#   M A I N   P R O G R A M   #
+###############################
+
+if (! -d $INCREMENTAL_ROOT) {
+  MyDie "Backup directory '$INCREMENTAL_ROOT' does not exist.\n";
+}
+
+my $dh = IO::Dir->new($INCREMENTAL_ROOT) or MyDie "Can't read directory '$INCREMENTAL_ROOT': $!";
+my @ALL_ENTRIES = sort { $a cmp $b } $dh->read;
+$dh->close();
+
+# Special token ":all" just takes all visible incremental backups names
+if (@BAK_NAMES == 1 && $BAK_NAMES[0] eq ":all") {
+  @BAK_NAMES = grep(/^\w+$/ && -d "$INCREMENTAL_ROOT/$_", @ALL_ENTRIES);
+}
+
+# Check the status of each named incremental backup set
+my @check_results=(); # tuples: [ name, retcode, message, numbackups, time_ago, numfiles, pretty_size ]
+foreach my $name (@BAK_NAMES) {
+  my ($retcode,$message,$numbak,$timeago,$numfiles,$size) = &CheckBackupByName($name);
+  #                        0        1         2        3        4          5        6
+  my $short_name = $name;
+  if ($PREFIX ne "" && substr($name,0,length($PREFIX)) eq $PREFIX) {
+    $short_name = substr($name,length($PREFIX));
+    $short_name =~ s/^_//;
+  }
+  push(@check_results, [ $short_name, $retcode, $message, $numbak, $timeago, $numfiles, $size ]);
+}
+@check_results = sort { $b->[1] <=> $a->[1] } @check_results; # sort by highest retcode
+
+
+# Case where all are OK
+if ($check_results[0]->[1] == 0) {
+  my $names    = join(",", map { $_->[0] } @check_results);
+  my $numbaks  = join(",", map { $_->[3] } @check_results);
+  my $numfiles = join(",", map { $_->[5] } @check_results);
+  my $sizes    = join(",", map { $_->[6] } @check_results);
+  my ($recent,$old) = (99999,0);
+  map { my $timeago = $_->[4];
+        $recent = $timeago if $timeago < $recent;
+        $old    = $timeago if $timeago > $old;
+      } @check_results;
+  my $message = join(", ", map {
+     my ($nam, $nb, $nf, $sz) = ($_->[0], $_->[3], $_->[5], $_->[6]);
+     "$nam=($nb,$nf,$sz)";
+     } @check_results);
+  if (@check_results == 1) {
+    $message = "OK: $names has $numbaks incrementals, transfered $numfiles files ($sizes)";
+  } else {
+    $message = "OK: $message";
+  }
+  $message .= sprintf(" Latest=%.1f hours ago.",$recent);
+  $message =~ s/\s*$//;
+  print $message,"\n";
+  exit 0;
+}
+
+# Any other situation (warning, error etc), just print the first one
+# and a summary of how many other situations.
+my $topret  = $check_results[0]->[1];
+my $message = $check_results[0]->[2];
+$message =~ s/\s*$//;
+if (@check_results > 1) {
+  my $summary = join(", ",
+    map {
+      my $nam = $_->[0];
+      my $ret = $_->[1]; my $stat = $ret == 0 ? "OK" : $ret == 1 ? "WARN" : $ret == 2 ? "ERR" : "UNK";
+      "$nam=$stat";
+    } @check_results);
+  $message .= " $summary"
+}
+print $message,"\n";
+exit $topret;
+
+
+#############################
+#   S U B R O U T I N E S   #
+#############################
+
+sub CheckBackupByName {
+  my $name = shift;
+
+  my $DEST_NAME = "$INCREMENTAL_ROOT/$name"; # outdir/name
+  my $PIDFILE   = "$DEST_NAME.rsync_inc.pid";
+
+  if (! -d $DEST_NAME) {
+    return(2, "CRITICAL: a backup named '$name' does not yet exist in '$INCREMENTAL_ROOT'.\n");
+  }
+  
+  # Scan output directory for previous backups
+  my @log_entries = grep(/^\Q$name\E\.\d\d\d\d-\d\d-\d\dT\d\d:?\d\d:?\d\d\.rsync_log$/, @ALL_ENTRIES);
+  my @inc_entries = grep(/^\Q$name\E\.\d\d\d\d-\d\d-\d\dT\d\d:?\d\d:?\d\d$/,            @ALL_ENTRIES);
+  
+  my $last_backup = $inc_entries[-1];
+  my $last_log    = $log_entries[-1];
+  
+  # Check for runnning backup process
+  if (my @pidfile_stats = stat($PIDFILE) and -r _ and my $fh = new IO::File "<$PIDFILE") {
+    my $pid = <$fh>;
+    chomp $pid;
+    $fh->close();
+    my $running = 0;
+    my $psout = new IO::File "/bin/ps ax -o pid,command|";
+    if ($psout) {
+      while (my $line = <$psout>) {
+        next unless $line =~ /^\s*\Q$pid\E.*perl.*rsync/io;
+        $running=1;
+        last;
+      }
+    }
+    $psout->close();
+    if ($running) {
+      my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+          $atime,$mtime,$ctime,$blksize,$blocks) = @pidfile_stats;
+      my $runtime = time() - $mtime; # in seconds
+      if ($runtime > $CRIT_HOURS*3600) {
+          print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
+          return(2,sprintf "CRITICAL: Backup has been running for %.1f hours, more than $CRIT_HOURS hours.\n", $runtime/3600);
+      }
+      if ($runtime > $WARN_HOURS*3600) {
+          print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
+          return(1,sprintf "WARNING: Backup has been running for %.1f hours, more than $WARN_HOURS hours.\n", $runtime/3600);
+      }
+      return(0, "OK: Backup in progress since " . scalar(localtime($mtime)) . " (for $runtime seconds).\n");
+    }
+  }
+  
+  # Check for finished backups
+  if (! $last_backup && ! $last_log) {
+    return(2, "CRITICAL: No backups yet produced.\n");
+  }
+  
+  if (  $last_backup && ! $last_log) {
+    return(2, "CRITICAL: Some backups exists but no 'rsync_log' files were found?\n");
+  }
+  
+  if (! $last_backup &&   $last_log) {
+    return(2, "CRITICAL: No backups found but there are 'rsync_log' files around?\n");
+  }
+  
+  my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+      $atime,$mtime,$ctime,$blksize,$blocks) = stat("$INCREMENTAL_ROOT/$last_log");
+  if (!defined($mtime)) {
+     MyDie "Can't find completion time of last backup.\n";
+  }
+  if (! -r "$INCREMENTAL_ROOT/$last_log") {
+     MyDie "Cannot open logfile '$last_log' for reading!\n";
+  }
+  
+  # Check rsync output file
+  my $fh = new IO::File "/usr/bin/tail -20 $INCREMENTAL_ROOT/$last_log|";
+  my $rsynctail = join("",<$fh>);
+  $fh->close();
+  if ($rsynctail !~ /^total size is/m ) {
+    print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0;
+    return(2, "CRITICAL: last backup did not complete successfully.\n");
+  }
+  
+  my $overdue = time - $mtime - ($CRON_CYCLE*3600);
+  if ($overdue > 3600) {
+    return(2, sprintf("CRITICAL: Backup failed to run, overdue by %.1f hours.\n",int($overdue/3600)));
+  }
+  if ($overdue > 1) {
+    return(2, "WARNING: Backup failed to run, overdue by ".int($overdue/60)." minutes.\n");
+  }
+  
+  # Check for number of backups accumulated
+  my $num_backups = scalar(@inc_entries);
+  if ($num_backups > $KEEPNUM + 2) {
+     return(2, "CRITICAL: Found $num_backups backups in directory, more than expected $KEEPNUM.\n");
+  }
+  if ($num_backups > $KEEPNUM) {
+     return(1, "WARNING: Found $num_backups backups in directory, more than expected $KEEPNUM.\n");
+  }
+  
+  if (@inc_entries != @log_entries) {
+     return(1, sprintf("WARNING: Backup finished successfully %.1f hours ago but the number of logfiles does not match the number of backups. Please fix.\n",((time-$mtime)/3600)));
+  }
+  
+  my $transfered = "(Transfer size unknown)";
+  my $numfiles=0;
+  my $pretty="?";
+  if ($rsynctail =~ /Total transferred file size: (\d+) bytes/i) {
+    my $bytes  = $1;
+    ($numfiles) = ($rsynctail =~ /Number of files transferred: (\d+)/i); $numfiles += 0;
+    $pretty = "$1 bytes";
+    $pretty = sprintf("%3.1f Kbytes",$bytes/1_000)         if $bytes > 1_000;
+    $pretty = sprintf("%3.1f Mbytes",$bytes/1_000_000)     if $bytes > 1_000_000;
+    $pretty = sprintf("%3.1f Gbytes",$bytes/1_000_000_000) if $bytes > 1_000_000_000;
+    $transfered = "Transfered $numfiles files ($pretty)";
+  }
+  
+  return(0,
+     sprintf("OK: $num_backups backups. Latest successfully finished %.1f hours ago: $transfered\n",((time-$mtime)/3600)),
+     $num_backups, ((time-$mtime)/3600), $numfiles, $pretty );
+}
+
+sub MyDie {
+    my $message = shift;
+    $message =~ s/\s*$/\n/;
+    print "ERROR: $message";
+    exit 3;
+}
+

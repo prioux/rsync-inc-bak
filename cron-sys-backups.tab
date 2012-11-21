@@ -1,0 +1,24 @@
+
+#
+# This file is used by ~root/cron-sys-backups.sh
+# to define which directories to backup using rsync-incremental-backup.pl
+#
+
+# Options for rsync-incremental-backup.pl
+BACKUP_RIB_OPTS="-F -P -K 14,1,9,17,25 -k 40"
+
+# SSH user and path for system backups.
+BACKUP_DEST="rdiffbak@macduff.bic.mni.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
+
+# Prefix for backups names.
+BACKUP_PREFIX="${SHOSTNAME}_"
+
+# Name       Directory        r-i-b.pl options
+#----------- ---------------- -------------------------------------------------------------------------
+etc          /etc
+usr_local    /usr/local       -x '--exclude=bic'
+home         /home            -x '--exclude=mero --exclude=prioux --exclude=nkassis --exclude="*/.ssh"'
+root         /root            -x '--exclude=".ssh"'
+var_www      /var/www
+var_lib      /var/lib
+
