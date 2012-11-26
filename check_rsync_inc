@@ -293,7 +293,7 @@ sub CheckBackupByName {
   if ($rsynctail =~ /Total transferred file size: (\d+) bytes/i) {
     my $bytes  = $1;
     ($numfiles) = ($rsynctail =~ /Number of files transferred: (\d+)/i); $numfiles += 0;
-    $pretty = "$1 bytes";
+    $pretty = "$bytes bytes";
     $pretty = sprintf("%3.1f Kbytes",$bytes/1_000)         if $bytes > 1_000;
     $pretty = sprintf("%3.1f Mbytes",$bytes/1_000_000)     if $bytes > 1_000_000;
     $pretty = sprintf("%3.1f Gbytes",$bytes/1_000_000_000) if $bytes > 1_000_000_000;
