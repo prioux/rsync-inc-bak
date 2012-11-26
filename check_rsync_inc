@@ -220,34 +220,19 @@ sub CheckBackupByName {
   my $last_log    = $log_entries[-1];
   
   # Check for runnning backup process
-  if (my @pidfile_stats = stat($PIDFILE) and -r _ and my $fh = new IO::File "<$PIDFILE") {
-    my $pid = <$fh>;
-    chomp $pid;
-    $fh->close();
-    my $running = 0;
-    my $psout = new IO::File "/bin/ps ax -o pid,command|";
-    if ($psout) {
-      while (my $line = <$psout>) {
-        next unless $line =~ /^\s*\Q$pid\E.*perl.*rsync/io;
-        $running=1;
-        last;
-      }
+  if (my @pidfile_stats = stat($PIDFILE)) {
+    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+        $atime,$mtime,$ctime,$blksize,$blocks) = @pidfile_stats;
+    my $runtime = time() - $mtime; # in seconds
+    if ($runtime > $CRIT_HOURS*3600) {
+        print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
+        return(2,sprintf "CRITICAL: Backup has been running for %.1f hours, more than $CRIT_HOURS hours.\n", $runtime/3600);
     }
-    $psout->close();
-    if ($running) {
-      my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
-          $atime,$mtime,$ctime,$blksize,$blocks) = @pidfile_stats;
-      my $runtime = time() - $mtime; # in seconds
-      if ($runtime > $CRIT_HOURS*3600) {
-          print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
-          return(2,sprintf "CRITICAL: Backup has been running for %.1f hours, more than $CRIT_HOURS hours.\n", $runtime/3600);
-      }
-      if ($runtime > $WARN_HOURS*3600) {
-          print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
-          return(1,sprintf "WARNING: Backup has been running for %.1f hours, more than $WARN_HOURS hours.\n", $runtime/3600);
-      }
-      return(0, "OK: Backup in progress since " . scalar(localtime($mtime)) . " (for $runtime seconds).\n");
+    if ($runtime > $WARN_HOURS*3600) {
+        print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
+        return(1,sprintf "WARNING: Backup has been running for %.1f hours, more than $WARN_HOURS hours.\n", $runtime/3600);
     }
+    return(0, "OK: Backup in progress since " . scalar(localtime($mtime)) . " (for $runtime seconds).\n");
   }
   
   # Check for finished backups
