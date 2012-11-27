@@ -215,6 +215,7 @@ sub CheckBackupByName {
   # Scan output directory for previous backups
   my @log_entries = grep(/^\Q$name\E\.\d\d\d\d-\d\d-\d\dT\d\d:?\d\d:?\d\d\.rsync_log$/, @ALL_ENTRIES);
   my @inc_entries = grep(/^\Q$name\E\.\d\d\d\d-\d\d-\d\dT\d\d:?\d\d:?\d\d$/,            @ALL_ENTRIES);
+  my $num_backups = scalar(@inc_entries);
   
   my $last_backup = $inc_entries[-1];
   my $last_log    = $log_entries[-1];
@@ -232,7 +233,8 @@ sub CheckBackupByName {
         print "Check the logfile in $INCREMENTAL_ROOT/$last_log\n" if $DEBUG > 0 && $last_log;
         return(1,sprintf "WARNING: Backup has been running for %.1f hours, more than $WARN_HOURS hours.\n", $runtime/3600);
     }
-    return(0, "OK: Backup in progress since " . scalar(localtime($mtime)) . " (for $runtime seconds).\n");
+    return(0, "OK: Backup in progress since " . scalar(localtime($mtime)) . " (for $runtime seconds).\n",
+           $num_backups, ($runtime/3600), "(running)", "$runtime secs");
   }
   
   # Check for finished backups
@@ -275,7 +277,6 @@ sub CheckBackupByName {
   }
   
   # Check for number of backups accumulated
-  my $num_backups = scalar(@inc_entries);
   if ($num_backups > $KEEPNUM + 2) {
      return(2, "CRITICAL: Found $num_backups backups in directory, more than expected $KEEPNUM.\n");
   }
