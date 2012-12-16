@@ -276,12 +276,17 @@ sub CheckBackupByName {
     return(2, "WARNING: Backup failed to run, overdue by ".int($overdue/60)." minutes.\n");
   }
   
-  # Check for number of backups accumulated
-  if ($num_backups > $KEEPNUM + 2) {
-     return(2, "CRITICAL: Found $num_backups backups in directory, more than expected $KEEPNUM.\n");
+  # Check for number of backups accumulated.
+  # The -k option of rsync_incremental_backup limits the number of backups BEFORE
+  # a new incremental is performed, therefore there is often one more backup on
+  # disk than the number provided to -k. To make things simpler, the -k option
+  # of this program takes that into account (with $ADJUSTED_KEEPNUM below).
+  my $ADJUSTED_KEEPNUM = $KEEPNUM+1;
+  if ($num_backups > $ADJUSTED_KEEPNUM + 2) {
+     return(2, "CRITICAL: Found $num_backups backups in directory, more than expected $ADJUSTED_KEEPNUM.\n");
   }
-  if ($num_backups > $KEEPNUM) {
-     return(1, "WARNING: Found $num_backups backups in directory, more than expected $KEEPNUM.\n");
+  if ($num_backups > $ADJUSTED_KEEPNUM) {
+     return(1, "WARNING: Found $num_backups backups in directory, more than expected $ADJUSTED_KEEPNUM.\n");
   }
   
   if (@inc_entries != @log_entries) {
