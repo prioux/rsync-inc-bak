@@ -189,7 +189,7 @@ if (@check_results > 1) {
   my $summary = join(", ",
     map {
       my $nam = $_->[0];
-      my $ret = $_->[1]; my $stat = $ret == 0 ? "OK" : $ret == 1 ? "WARN" : $ret == 2 ? "ERR" : "UNK";
+      my $ret = $_->[1]; my $stat = $ret == 0 ? "OK" : $ret == 1 ? "WARN" : $ret == 2 ? "CRIT" : "UNK";
       "$nam=$stat";
     } @check_results);
   $message .= " $summary"
