@@ -167,7 +167,7 @@ if ($check_results[0]->[1] == 0) {
       } @check_results;
   my $message = join(", ", map {
      my ($nam, $nb, $nf, $sz) = ($_->[0], $_->[3], $_->[5], $_->[6]);
-     "$nam=($nb,$nf,$sz)";
+     "$nam=($nb backups,$nf files,$sz)";
      } @check_results);
   if (@check_results == 1) {
     $message = "OK: $names has $numbaks incrementals, transfered $numfiles files ($sizes)";
