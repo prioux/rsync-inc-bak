@@ -11,6 +11,7 @@ echo "INFO: [`date +%H:%M:%S`] ======== Backup script starting `date +%Y-%m-%d` 
 echo "INFO: [`date +%H:%M:%S`] ==================================================="
 
 # Only one instance
+export PATH=/sbin:$PATH  # pidof is often located there
 PID=`pidof -x -o $$ -o %PPID $0`
 if [ -n "$PID" ] ; then
   echo "ERROR: [`date +%H:%M:%S`] $0 already running."
