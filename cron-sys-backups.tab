@@ -5,7 +5,7 @@
 #
 
 # Options for rsync-incremental-backup.pl
-BACKUP_RIB_OPTS="-F -P -K 14,1,9,17,25 -k 40"
+BACKUP_RIB_OPTS="-F -P -K 14,1 -k 18"
 
 # SSH user and path for system backups.
 BACKUP_DEST="rdiffbak@macduff.bic.mni.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
@@ -21,4 +21,5 @@ home         /home            -x '--exclude=mero --exclude=prioux --exclude=nkas
 root         /root            -x '--exclude=".ssh"'
 var_www      /var/www
 var_lib      /var/lib
+var_log      /var/log
 
