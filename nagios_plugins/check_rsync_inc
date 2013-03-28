@@ -139,6 +139,12 @@ if (@BAK_NAMES == 1 && $BAK_NAMES[0] eq ":all") {
   @BAK_NAMES = grep(/^\w+$/ && -d "$INCREMENTAL_ROOT/$_", @ALL_ENTRIES);
 }
 
+# No backup found?!?
+if (@BAK_NAMES == 0) {
+   print "CRITICAL: No backups found.\n";
+   exit 2;
+}
+
 # Check the status of each named incremental backup set
 my @check_results=(); # tuples: [ name, retcode, message, numbackups, time_ago, numfiles, pretty_size ]
 foreach my $name (@BAK_NAMES) {
