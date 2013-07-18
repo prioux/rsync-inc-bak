@@ -155,7 +155,7 @@ my $SOURCE_USER_HOST=$1;
 my $SOURCE_DIR=$2;
 
 die "Specification of the source directory must not include a trailing '/'.\n"
-  if $SOURCE_DIR =~ m#/$#;
+  if $SOURCE_DIR =~ m#/$# && $SOURCE_DIR ne "/";
 
 die "Invalid local source directory '$SOURCE_DIR'.\n"
   if ! $SOURCE_USER_HOST && (! -d $SOURCE_DIR || ! -r _);
@@ -338,10 +338,12 @@ my $childpid = fork;
 if (!$childpid) {
     $WITH_PIDFILE=undef; # don't want to trigger END block here
     if ($BACKUP_MODE eq "PUSH") {
-      MySystem("rsync $RSYNC_OPTS $FAKE_SUPER $EXTRA_RSYNC_OPTS $SOURCE_DIR/ $INCREMENTAL_USER_HOST:$QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $LOCAL_LOG 2>&1");  # the slash is IMPORTANT after source
+      my $source_dir_slash = $SOURCE_DIR eq "/" ? "/" : "$SOURCE_DIR/"; # prevents '//'
+      MySystem("rsync $RSYNC_OPTS $FAKE_SUPER $EXTRA_RSYNC_OPTS $source_dir_slash $INCREMENTAL_USER_HOST:$QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $LOCAL_LOG 2>&1");  # the slash is IMPORTANT after source
       MySystem("scp -q $LOCAL_LOG $INCREMENTAL_USER_HOST:$QUOTED_INCREMENTAL_ROOT/$LOG_BASE");
     } else {
-      MySystem("rsync $RSYNC_OPTS $EXTRA_RSYNC_OPTS $SOURCE_FULL_SPEC/ $QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $QUOTED_INCREMENTAL_ROOT/$LOG_BASE 2>&1");  # the slash is IMPORTANT after source
+      my $source_full_spec_slash = $SOURCE_FULL_SPEC =~ m#:/$# ? $SOURCE_FULL_SPEC : "$SOURCE_FULL_SPEC/"; # prevents '//'
+      MySystem("rsync $RSYNC_OPTS $EXTRA_RSYNC_OPTS $source_full_spec_slash $QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $QUOTED_INCREMENTAL_ROOT/$LOG_BASE 2>&1");  # the slash is IMPORTANT after source
     }
     exit 0;
 }
