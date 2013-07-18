@@ -421,7 +421,10 @@ if ($NO_TREE) {
     my $treestarttime = time;
     info "Making hardlink tree for current snapshot '$INC_BASE' ...";
     if ($BACKUP_MODE eq "PUSH") {
-        MySystem("ssh -x $INCREMENTAL_USER_HOST \"cd $QUOTED_INCREMENTAL_ROOT/$BAK_NAME ; find . -print | cpio -dplm ../$INC_BASE 2> /dev/null\"");
+        # Note that on MacOS X, the -0 option of cpio is not supported!
+        # The find command's -print0 statement then need to be changed to -print
+        # TODO: autodetect support or not.
+        MySystem("ssh -x $INCREMENTAL_USER_HOST \"cd $QUOTED_INCREMENTAL_ROOT/$BAK_NAME ; find . -print0 | cpio -p -d -l -m -0 ../$INC_BASE 2> /dev/null\"");
     } else { # PULL or LOCAL
         chdir("$INCREMENTAL_ROOT/$BAK_NAME") || MyDie "Can't cd to srcbase ?!?";
         MySystem("find . -print | cpio -dplm ../$INC_BASE 2> /dev/null");
