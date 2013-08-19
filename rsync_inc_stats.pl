@@ -65,7 +65,7 @@ Options:
        [-s]              Amount of data in incremental backups
        [-F]              Total number of files
        [-S]              Total amount of data 
-       [-a]              Same as all reports: -f -s -F -S
+       [-a]              Same as all reports: -F -f -S -s
 
   * Filter reports:
        [-A afterdate]    Only Report backups AFTER afterdate
@@ -96,10 +96,7 @@ USAGE
 
 my $DEBUG=0;
 my $ALL_BACKUPS_BASEDIR=".";
-my $DO_INC_NUMFILES=0;
-my $DO_TOT_NUMFILES=0;
-my $DO_INC_SIZE=0;
-my $DO_TOT_SIZE=0;
+my @REPORT_ORDER=();
 my $NUM_ENTRIES=30;
 my $AFTER_DATE="";
 my $BEFORE_DATE="";
@@ -136,12 +133,11 @@ for (;@ARGV;) {
     }
     $DEBUG=($arg ? $arg : 1)                     if $opt eq '@';
     $ALL_BACKUPS_BASEDIR=$arg                    if $opt eq 'D';
-    $DO_INC_NUMFILES=1                           if $opt eq 'f';
-    $DO_TOT_NUMFILES=1                           if $opt eq 'F';
-    $DO_INC_SIZE=1                               if $opt eq 's';
-    $DO_TOT_SIZE=1                               if $opt eq 'S';
-    $DO_INC_NUMFILES=$DO_TOT_NUMFILES=
-        $DO_INC_SIZE=$DO_TOT_SIZE=1              if $opt eq 'a';
+    push(@REPORT_ORDER,'incf')                   if $opt eq 'f';
+    push(@REPORT_ORDER,'totf')                   if $opt eq 'F';
+    push(@REPORT_ORDER,'incs')                   if $opt eq 's';
+    push(@REPORT_ORDER,'tots')                   if $opt eq 'S';
+    @REPORT_ORDER=qw( totf incf tots incs )      if $opt eq 'a';
     $SEP=$arg                                    if $opt eq 'C'; # not used anymore
     $BEFORE_DATE=$arg                            if $opt eq 'B';
     $AFTER_DATE=$arg                             if $opt eq 'A';
@@ -158,7 +154,7 @@ for (;@ARGV;) {
 our @BASES = @ARGV; # and they belong to you.
 
 # Default when no option: -s
-$DO_INC_SIZE=1 if $DO_INC_NUMFILES + $DO_TOT_NUMFILES + $DO_INC_SIZE + $DO_TOT_SIZE == 0;
+@REPORT_ORDER=('incs') if @REPORT_ORDER == 0;
 
 $AFTER_DATE  = &ValidateDate($AFTER_DATE)  if $AFTER_DATE;
 $BEFORE_DATE = &ValidateDate($BEFORE_DATE) if $BEFORE_DATE;
@@ -267,17 +263,20 @@ sub DumpReport {
   my $by_tots = &AllKeysByValue('tots');
   my $by_incs = &AllKeysByValue('incs');
 
-  &ReportTop('Top Usage By Total Files',         $by_totf, 'totf') if $DO_TOT_NUMFILES;
-  &ReportTop('Top Usage By Incremental Files',   $by_incf, 'incf') if $DO_INC_NUMFILES;
-  &ReportTop('Top Usage By Total Size',          $by_tots, 'tots') if $DO_TOT_SIZE;
-  &ReportTop('Top Usage By Incremental Size',    $by_incs, 'incs') if $DO_INC_SIZE;
+  foreach my $report (@REPORT_ORDER) {
+    &ReportTop('= Top Usage By Total Files =======', $by_totf, 'totf') if $report eq 'totf';
+    &ReportTop('= Top Usage By Incremental Files =', $by_incf, 'incf') if $report eq 'incf';
+    &ReportTop('= Top Usage By Total Size ========', $by_tots, 'tots') if $report eq 'tots';
+    &ReportTop('= Top Usage By Incremental Size ==', $by_incs, 'incs') if $report eq 'incs';
+  }
+
 }
 
 sub ReportTop {
   my ($header,$list,$valname) = @_;
 
   print "\n",
-        "============= $header =============\n";
+        "=========$header=========\n";
   
   my $printed   = 0;
   my %seen_base = ();
@@ -300,7 +299,7 @@ sub ReportTop {
        $val = sprintf("%d bytes",$val);
       }
     }
-    printf "%10s %-20s %14s\n",$date,$base,$val;
+    printf "%10s %-26s %14s\n",$date,$base,$val;
     $printed++;
   }
     
@@ -324,74 +323,74 @@ sub AllKeysByValue {
   \@sorted;
 }
 
-sub DumpReportOld {
-  #$Data::Dumper::Indent=1;  # Fixed-size data dump indentation.
-  #$Data::Dumper::Terse=1;   # No $VARn prefix in dumps.
-  #my $stats = Data::Dumper->Dump( [ $STATS ] );
-  #print $stats,"\n";
-
-  &PrepareUniqLists;
-
-  #foreach my $base (@UNIQ_BASES) {
-  #  my $basestats = $STATS->{$base};
-  #  foreach my $date (@UNIQ_DATES) {
-  #    my $rep = $basestats->{$date}; # can: not exist
-  #    next unless $rep;
-
-  #    my @vals = ();
-  #    push(@vals, $rep->{'totf'}) if $DO_TOT_NUMFILES;
-  #    push(@vals, $rep->{'incf'}) if $DO_INC_NUMFILES;
-  #    push(@vals, $rep->{'tots'}) if $DO_TOT_SIZE;
-  #    push(@vals, $rep->{'incs'}) if $DO_INC_SIZE;
-
-  #    print $base,            $SEP,
-  #          $date,            $SEP,
-  #          join($SEP,@vals),
-  #          "\n";
-  #  }
-  #}
-
-
-  # Build headers
-
-  my @ext = ();
-  push(@ext, "_TotF") if $DO_TOT_NUMFILES;
-  push(@ext, "_IncF") if $DO_INC_NUMFILES;
-  push(@ext, "_TotS") if $DO_TOT_SIZE;
-  push(@ext, "_IncS") if $DO_INC_SIZE;
-  my @headers = ();
-  foreach my $base (@UNIQ_BASES) {
-    foreach my $ext (@ext) {
-      push(@headers,"$base$ext");
-    }
-  }
-  print "#Date", $SEP,
-        join($SEP,@headers),
-        "\n";
-
-  # Dump data by date
-
-  foreach my $date (@UNIQ_DATES) {
-    print $date, $SEP;
-
-    my @vals = ();
-
-    foreach my $base (@UNIQ_BASES) {
-      my $basestats = $STATS->{$base};
-      my $rep = $basestats->{$date} || {}; # can not exist
-
-      push(@vals, $rep->{'totf'} || "") if $DO_TOT_NUMFILES;
-      push(@vals, $rep->{'incf'} || "") if $DO_INC_NUMFILES;
-      push(@vals, $rep->{'tots'} || "") if $DO_TOT_SIZE;
-      push(@vals, $rep->{'incs'} || "") if $DO_INC_SIZE;
-
-    }
-
-    print join($SEP,@vals), "\n";
-  }
-
-  1;
-}
+#sub DumpReportOld {
+#  #$Data::Dumper::Indent=1;  # Fixed-size data dump indentation.
+#  #$Data::Dumper::Terse=1;   # No $VARn prefix in dumps.
+#  #my $stats = Data::Dumper->Dump( [ $STATS ] );
+#  #print $stats,"\n";
+#
+#  &PrepareUniqLists;
+#
+#  #foreach my $base (@UNIQ_BASES) {
+#  #  my $basestats = $STATS->{$base};
+#  #  foreach my $date (@UNIQ_DATES) {
+#  #    my $rep = $basestats->{$date}; # can: not exist
+#  #    next unless $rep;
+#
+#  #    my @vals = ();
+#  #    push(@vals, $rep->{'totf'}) if $DO_TOT_NUMFILES;
+#  #    push(@vals, $rep->{'incf'}) if $DO_INC_NUMFILES;
+#  #    push(@vals, $rep->{'tots'}) if $DO_TOT_SIZE;
+#  #    push(@vals, $rep->{'incs'}) if $DO_INC_SIZE;
+#
+#  #    print $base,            $SEP,
+#  #          $date,            $SEP,
+#  #          join($SEP,@vals),
+#  #          "\n";
+#  #  }
+#  #}
+#
+#
+#  # Build headers
+#
+#  my @ext = ();
+#  push(@ext, "_TotF") if $DO_TOT_NUMFILES;
+#  push(@ext, "_IncF") if $DO_INC_NUMFILES;
+#  push(@ext, "_TotS") if $DO_TOT_SIZE;
+#  push(@ext, "_IncS") if $DO_INC_SIZE;
+#  my @headers = ();
+#  foreach my $base (@UNIQ_BASES) {
+#    foreach my $ext (@ext) {
+#      push(@headers,"$base$ext");
+#    }
+#  }
+#  print "#Date", $SEP,
+#        join($SEP,@headers),
+#        "\n";
+#
+#  # Dump data by date
+#
+#  foreach my $date (@UNIQ_DATES) {
+#    print $date, $SEP;
+#
+#    my @vals = ();
+#
+#    foreach my $base (@UNIQ_BASES) {
+#      my $basestats = $STATS->{$base};
+#      my $rep = $basestats->{$date} || {}; # can not exist
+#
+#      push(@vals, $rep->{'totf'} || "") if $DO_TOT_NUMFILES;
+#      push(@vals, $rep->{'incf'} || "") if $DO_INC_NUMFILES;
+#      push(@vals, $rep->{'tots'} || "") if $DO_TOT_SIZE;
+#      push(@vals, $rep->{'incs'} || "") if $DO_INC_SIZE;
+#
+#    }
+#
+#    print join($SEP,@vals), "\n";
+#  }
+#
+#  1;
+#}
 
 sub ValidateDate {
   my $date = shift;
