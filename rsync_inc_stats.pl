@@ -57,6 +57,9 @@ Usage: $BASENAME [options] inc_base [inc_base...]
 
 Options:
 
+  * Select incremental backup location:
+       [-D dir]          Directory of all incremental backups
+
   * Select reports:
        [-f]              Number of files in incremental backups
        [-s]              Amount of data in incremental backups
@@ -72,11 +75,17 @@ Options:
   * Display options:
        [-N numentries]   How many entries to report (default: one terminal's page)
 
-Dates can be specified as:
+About dates: They can be specified as:
    2013        whole year
    2013-04     year + month
    2013-04-17  specific date
    -3          three days before today
+
+About the arguments:
+   The inc_base arguments are subpath to entire sets of incremental backups.
+   They should point to existing subdirectories under the -D dir option.
+   For instance, "amnesia/amnesia_root" or "netmind_vms/demo/demo_usr_local" etc.
+
 USAGE
     exit 1;
 }
@@ -86,6 +95,7 @@ USAGE
 ##################################
 
 my $DEBUG=0;
+my $ALL_BACKUPS_BASEDIR=".";
 my $DO_INC_NUMFILES=0;
 my $DO_TOT_NUMFILES=0;
 my $DO_INC_SIZE=0;
@@ -112,11 +122,11 @@ if (-t STDIN) {
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@CfsFSNaBAT])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DCfsFSNaBAT])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
-    if ($opt =~ /[NCBA]/ && $arg eq "") {
+    if ($opt =~ /[DNCBA]/ && $arg eq "") {
         if (@ARGV < 2) {
             print "Argument required for option \"$opt\".\n";
             exit 1;
@@ -125,6 +135,7 @@ for (;@ARGV;) {
         $arg=$ARGV[0];
     }
     $DEBUG=($arg ? $arg : 1)                     if $opt eq '@';
+    $ALL_BACKUPS_BASEDIR=$arg                    if $opt eq 'D';
     $DO_INC_NUMFILES=1                           if $opt eq 'f';
     $DO_TOT_NUMFILES=1                           if $opt eq 'F';
     $DO_INC_SIZE=1                               if $opt eq 's';
@@ -175,6 +186,8 @@ our @UNIQ_BASES=();
 our @UNIQ_DATES=();
 our @ALL_KEYS=();
 our %DIRECT_REPORT=();
+
+chdir($ALL_BACKUPS_BASEDIR) or die "Can't CD to '$ALL_BACKUPS_BASEDIR': $!\n";
 
 foreach my $base (@BASES) {
     &GatherStats($base);
