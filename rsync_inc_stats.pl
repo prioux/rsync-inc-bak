@@ -74,12 +74,16 @@ Options:
 
   * Display options:
        [-N numentries]   How many entries to report (default: one terminal's page)
+       [-b]              All sizes shown in bytes
 
 About dates: They can be specified as:
    2013        whole year
    2013-04     year + month
    2013-04-17  specific date
-   -3          three days before today
+   \@0          today
+   \@3          three days before today
+
+   Note: Date boundaries are inclusive.
 
 About the arguments:
    The inc_base arguments are subpath to entire sets of incremental backups.
@@ -101,6 +105,7 @@ my $NUM_ENTRIES=30;
 my $AFTER_DATE="";
 my $BEFORE_DATE="";
 my $TOP_BASE_ONLY=0;
+my $BYTE_SIZE=0;
 
 my $SEP="\t"; # not used anymore, was for CSV dump
 
@@ -119,7 +124,7 @@ if (-t STDIN) {
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DCfsFSNaBAT])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@bDCfsFSNaBAT])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
@@ -143,6 +148,7 @@ for (;@ARGV;) {
     $AFTER_DATE=$arg                             if $opt eq 'A';
     $NUM_ENTRIES=$arg                            if $opt eq 'N';
     $TOP_BASE_ONLY=1                             if $opt eq 'T';
+    $BYTE_SIZE=1                                 if $opt eq 'b';
     shift;
 }
 
@@ -276,7 +282,7 @@ sub ReportTop {
   my ($header,$list,$valname) = @_;
 
   print "\n",
-        "=========$header=========\n";
+        "==========$header==========\n";
   
   my $printed   = 0;
   my %seen_base = ();
@@ -289,17 +295,19 @@ sub ReportTop {
     my $entry        = $DIRECT_REPORT{"$base|$date"};
     my $val          = $entry->{$valname};
     if ($valname =~ /s$/i) {
-      if      ($val >= 1073741824) {
+      if      (!$BYTE_SIZE && $val >= 1073741824) {
         $val = sprintf("%.2f Gibytes",$val / 1073741824);
-      } elsif ($val >= 1048576) {
+      } elsif (!$BYTE_SIZE && $val >= 1048576) {
         $val = sprintf("%.2f Mibytes",$val / 1048576);
-      } elsif ($val >= 1024) {
+      } elsif (!$BYTE_SIZE && $val >= 1024) {
        $val = sprintf("%.2f Kibytes",$val / 1024);
-      } else {
+      } elsif (!$BYTE_SIZE) {
        $val = sprintf("%d bytes",$val);
+      } else {
+       $val = sprintf("%d",$val); # pure bytes
       }
     }
-    printf "%10s %-26s %14s\n",$date,$base,$val;
+    printf "%10s %-28s %14s\n",$date,$base,$val;
     $printed++;
   }
     
@@ -394,14 +402,14 @@ sub AllKeysByValue {
 
 sub ValidateDate {
   my $date = shift;
-  if ($date =~ /^-(\d+)$/) {
+  if ($date =~ /^\@(\d+)$/) {
     my $ago = ParseDate("$1 days ago");
     my $tt  = UnixDate($ago,"%Y-%m-%d");
     print STDERR "Computed past date: $tt\n" if $DEBUG;
     return $tt;
   }
   if ($date !~ /^\d\d\d\d(-\d\d(-\d\d)?)?$/) {
-    die "Illegal date format: should be YYYY or YYYY-MM or YYYY-MM-DD\n";
+    die "Illegal date format: should be YYYY or YYYY-MM or YYYY-MM-DD or \@nn\n";
   }
   return $date;
 }
