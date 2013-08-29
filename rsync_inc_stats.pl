@@ -68,13 +68,21 @@ Options:
        [-a]              Same as all reports: -F -f -S -s
 
   * Filter reports:
-       [-A afterdate]    Only Report backups AFTER afterdate
-       [-B beforedate]   Only Report backups BEFORE beforedate
+       [-A afterdate]    Only report backups AFTER afterdate
+       [-B beforedate]   Only report backups BEFORE beforedate
        [-T]              Only report top backup for each name
+       [-m size]         Only report size backups with values > size
+       [-M size]         Only report size backups with values < size
+       [-c num]          Only report numfiles backups with values > num
+       [-C num]          Only report numfiles backups with values < num
 
   * Display options:
        [-N numentries]   How many entries to report (default: one terminal's page)
        [-b]              All sizes shown in bytes
+
+  * Sorting options: (default is to sort by (value,base,date))
+       [-O bd]           Sort by (base,date)
+       [-O db]           Sort by (date,base)
 
 About dates: They can be specified as:
    2013        whole year
@@ -106,8 +114,12 @@ my $AFTER_DATE="";
 my $BEFORE_DATE="";
 my $TOP_BASE_ONLY=0;
 my $BYTE_SIZE=0;
+my $SORT_ORDER="vbd";
 
-my $SEP="\t"; # not used anymore, was for CSV dump
+my $MIN_SIZE=-1;
+my $MAX_SIZE=999_999_999_999_999;
+my $MIN_NUMF=-1;
+my $MAX_NUMF=999_999_999_999_999;
 
 # Get number of rows
 if (-t STDIN) {
@@ -124,11 +136,11 @@ if (-t STDIN) {
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@bDCfsFSNaBAT])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@bDfsFSNaBATOmMcC])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
-    if ($opt =~ /[DNCBA]/ && $arg eq "") {
+    if ($opt =~ /[DNBAOmMcC]/ && $arg eq "") {
         if (@ARGV < 2) {
             print "Argument required for option \"$opt\".\n";
             exit 1;
@@ -143,12 +155,17 @@ for (;@ARGV;) {
     push(@REPORT_ORDER,'incs')                   if $opt eq 's';
     push(@REPORT_ORDER,'tots')                   if $opt eq 'S';
     @REPORT_ORDER=qw( totf incf tots incs )      if $opt eq 'a';
-    $SEP=$arg                                    if $opt eq 'C'; # not used anymore
     $BEFORE_DATE=$arg                            if $opt eq 'B';
     $AFTER_DATE=$arg                             if $opt eq 'A';
     $NUM_ENTRIES=$arg                            if $opt eq 'N';
     $TOP_BASE_ONLY=1                             if $opt eq 'T';
     $BYTE_SIZE=1                                 if $opt eq 'b';
+    $SORT_ORDER=$arg                             if $opt eq 'O';
+
+    $MIN_SIZE=$arg                               if $opt eq 'm';
+    $MAX_SIZE=$arg                               if $opt eq 'M';
+    $MIN_NUMF=$arg                               if $opt eq 'c';
+    $MAX_NUMF=$arg                               if $opt eq 'C';
     shift;
 }
 
@@ -164,6 +181,9 @@ our @BASES = @ARGV; # and they belong to you.
 
 $AFTER_DATE  = &ValidateDate($AFTER_DATE)  if $AFTER_DATE;
 $BEFORE_DATE = &ValidateDate($BEFORE_DATE) if $BEFORE_DATE;
+
+die "Sorting options supported are 'vbd', 'bd' or 'db'.\n"
+    unless $SORT_ORDER =~ /^(vbd|bd|db)$/;
 
 ################
 # Trap Signals #
@@ -250,9 +270,18 @@ sub PrepareUniqLists {
     foreach my $date (keys %$basestats) {
       next if $BEFORE_DATE && $date gt $BEFORE_DATE;
       next if $AFTER_DATE  && $date lt $AFTER_DATE;
+      my $stats = $basestats->{$date};
+      next if $stats->{'totf'} < $MIN_NUMF;
+      next if $stats->{'totf'} > $MAX_NUMF;
+      next if $stats->{'incf'} < $MIN_NUMF;
+      next if $stats->{'incf'} > $MAX_NUMF;
+      next if $stats->{'tots'} < $MIN_SIZE;
+      next if $stats->{'tots'} > $MAX_SIZE;
+      next if $stats->{'incs'} < $MIN_SIZE;
+      next if $stats->{'incs'} > $MAX_SIZE;
       $uniq_dates{$date}++;
       push(@all_keys, [ $base, $date ]);
-      $DIRECT_REPORT{"$base|$date"} = $basestats->{$date};
+      $DIRECT_REPORT{"$base|$date"} = $stats;
     }
   }
 
@@ -318,14 +347,29 @@ sub AllKeysByValue {
   my @sorted = sort {
                  my ($abase,$adate) = @$a;
                  my ($bbase,$bdate) = @$b;
-                 my $ra = $DIRECT_REPORT{"$abase|$adate"};
-                 my $rb = $DIRECT_REPORT{"$bbase|$bdate"};
 
-                 $rb->{$valname} <=> $ra->{$valname}
-                                 or
-                          $abase cmp $bbase
-                                 or
-                          $bdate cmp $adate
+                 if ($SORT_ORDER eq 'bd') {
+
+                            $abase cmp $bbase
+                                   or
+                            $bdate cmp $adate
+
+                 } elsif ($SORT_ORDER eq 'db') {
+
+                            $bdate cmp $adate
+                                   or
+                            $abase cmp $bbase
+
+                 } else {
+
+                   my $ra = $DIRECT_REPORT{"$abase|$adate"};
+                   my $rb = $DIRECT_REPORT{"$bbase|$bdate"};
+                   $rb->{$valname} <=> $ra->{$valname}
+                                   or
+                            $abase cmp $bbase
+                                   or
+                            $bdate cmp $adate
+                 }
 
                } @ALL_KEYS;
   \@sorted;
