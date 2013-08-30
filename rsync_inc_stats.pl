@@ -116,9 +116,9 @@ my $TOP_BASE_ONLY=0;
 my $BYTE_SIZE=0;
 my $SORT_ORDER="vbd";
 
-my $MIN_SIZE=-1;
+my $MIN_SIZE=0;
 my $MAX_SIZE=999_999_999_999_999;
-my $MIN_NUMF=-1;
+my $MIN_NUMF=0;
 my $MAX_NUMF=999_999_999_999_999;
 
 # Get number of rows
@@ -162,10 +162,10 @@ for (;@ARGV;) {
     $BYTE_SIZE=1                                 if $opt eq 'b';
     $SORT_ORDER=$arg                             if $opt eq 'O';
 
-    $MIN_SIZE=$arg                               if $opt eq 'm';
-    $MAX_SIZE=$arg                               if $opt eq 'M';
-    $MIN_NUMF=$arg                               if $opt eq 'c';
-    $MAX_NUMF=$arg                               if $opt eq 'C';
+    $MIN_SIZE=&ValidSize($arg)                   if $opt eq 'm';
+    $MAX_SIZE=&ValidSize($arg)                   if $opt eq 'M';
+    $MIN_NUMF=&ValidSize($arg)                   if $opt eq 'c';
+    $MAX_NUMF=&ValidSize($arg)                   if $opt eq 'C';
     shift;
 }
 
@@ -271,12 +271,8 @@ sub PrepareUniqLists {
       next if $BEFORE_DATE && $date gt $BEFORE_DATE;
       next if $AFTER_DATE  && $date lt $AFTER_DATE;
       my $stats = $basestats->{$date};
-      next if $stats->{'totf'} < $MIN_NUMF;
-      next if $stats->{'totf'} > $MAX_NUMF;
       next if $stats->{'incf'} < $MIN_NUMF;
       next if $stats->{'incf'} > $MAX_NUMF;
-      next if $stats->{'tots'} < $MIN_SIZE;
-      next if $stats->{'tots'} > $MAX_SIZE;
       next if $stats->{'incs'} < $MIN_SIZE;
       next if $stats->{'incs'} > $MAX_SIZE;
       $uniq_dates{$date}++;
@@ -456,5 +452,18 @@ sub ValidateDate {
     die "Illegal date format: should be YYYY or YYYY-MM or YYYY-MM-DD or \@nn\n";
   }
   return $date;
+}
+
+sub ValidSize {
+  my $size = shift; # can be any int optionally followed by k, m, g or t
+  die "Values for -m -M -c and -C should be int, optionally followed by K, M, G or T\n"
+    unless $size =~ /^\s*(\d+)\s*([kmgt]?)\s*$/i;
+  my ($val,$suffix) = ($1,$2);
+  return $val                             if $suffix eq "";
+  return $val * 1024                      if $suffix =~ /k/i;
+  return $val * 1024 * 1024               if $suffix =~ /m/i;
+  return $val * 1024 * 1024 * 1024        if $suffix =~ /g/i;
+  return $val * 1024 * 1024 * 1024 * 1024 if $suffix =~ /t/i;
+  die "Oh oh.\n";
 }
 
