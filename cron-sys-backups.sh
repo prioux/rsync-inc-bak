@@ -49,13 +49,12 @@ if ! test -r $HOME/cron-sys-backups.tab ; then
   exit 2
 fi
 
-# There are three configurable variables: BACKUP_RIB_OPTS, BACKUP_DEST and BACKUP_PREFIX
-cat $HOME/cron-sys-backups.tab | perl -ne 'print if /^\s*BACKUP_(RIB_OPTS|DEST|PREFIX)=/' > /tmp/csb.tmp.$$
-source /tmp/csb.tmp.$$
-rm -f /tmp/csb.tmp.$$
-
 # Read config file backup table and backup each directory
-cat $HOME/cron-sys-backups.tab | perl -ne 'print unless /^\s*$|^\s*#|^\s*BACKUP_[A-Z_]+=/' | while builtin read name dir opts ; do
+cat $HOME/cron-sys-backups.tab | perl -ne 'print unless /^\s*$|^\s*#/' | while builtin read name dir opts ; do
+  if test "X${name:0:7}" == "XBACKUP_" ; then   # if line begins with BACKUP_ like a variable assignment
+    eval "$name $dir $opts"
+    continue
+  fi
   if test $# -gt 0 ; then
     if test "X$name" != "X$1" -a "X$BACKUP_PREFIX$name" != "X$1" -a "X$dir" != "X$1" ; then
       echo "WARN: [`date +%H:%M:%S`] Skipping backup '$name', because not matching filtering argument."
