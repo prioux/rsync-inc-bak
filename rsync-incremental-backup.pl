@@ -39,7 +39,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 2.1 2012/09/06 13:00:00 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 2.2 2012/09/06 13:00:00 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -63,13 +63,14 @@ sub Usage { # private
     print "Options:\n";
     print "\n";
     print "  -k num               : keep the most recent 'num' incremental backups; delete older ones.\n";
-    print "  -K rec,d1,d2,d3      : keep 'rec' most recent incremental backups; also keep backups.\n";
+    print "  -K rec,d1,d2,d3      : keep 'rec' most recent incremental backups; also keep backups\n";
     print "                         that fall on month days d1 or d2 etc. Can be used with -k num too.\n";
     print "  -n name              : use 'name' as the backup name; default is basename of 'source_dir'.\n";
     print "  -x rsyncoptions      : 'rsyncoptions' are additional options for rsync, all as a single argument.\n";
     print "  -F                   : triggers --fake-super option on rsync destination.\n";
-    print "  -P                   : create a pid file, 'name.pid'.\n";
+    print "  -P                   : create a pid file, 'name.pid' at the backup destination while the backup is running.\n";
     print "  -T                   : just do the backup, but do not generate the incremental tree.\n";
+    print "\n";
     exit 1;
 }
 
@@ -300,11 +301,15 @@ if ($BACKUP_MODE eq "PUSH") {
 info "There is a total of " . (scalar(@inc_entries)) . " backups already present.";
 
 # Clean up output directory of old backups
+my $ORIG_DEST_USED_K = &FindDestUsedKilobytes();
+my $AFTER_DEL_USED_K = $ORIG_DEST_USED_K;
+
 my $time_to_erase = 0;
 if (defined($KEEPNUM) || defined($KEEPRECENT)) {
   my ($to_erase,$to_keep) = &IdentifyOldBackups( \ @inc_entries ); # use $KEEPNUM and/or $KEEPRECENT
-  if (@$to_erase > 0) {
-      info "There are " . scalar(@$to_erase) . " old incremental backups to erase.";
+  my $num_to_erase = @$to_erase;
+  if ($num_to_erase > 0) {
+      info "There are $num_to_erase old incremental backups to erase.";
   }
   my $erase_start = time;
   while (@$to_erase > 0) {
@@ -322,6 +327,7 @@ if (defined($KEEPNUM) || defined($KEEPRECENT)) {
   } else {
       $time_to_erase = 0;
   }
+  $AFTER_DEL_USED_K = &FindDestUsedKilobytes() if $num_to_erase; # no need to check if no delete done
 }
 
 my $starttime = time;
@@ -433,8 +439,14 @@ if ($NO_TREE) {
     # IMPORTANT NOTE! At this point the CWD for this process has changed!
 }
 
+my $AFTER_BAK_USED_K = &FindDestUsedKilobytes();
+my $pretty_del_delta = &PrettySize(1024*($AFTER_DEL_USED_K-$ORIG_DEST_USED_K));
+my $pretty_bak_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$AFTER_DEL_USED_K));
+my $pretty_tot_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$ORIG_DEST_USED_K));
+
 info "Total time for rsync backup and tree generation: ",(time-$starttime), " seconds.\n";
 info "Total time for erasing, backup and tree generation: ",((time-$starttime)+$time_to_erase), " seconds.\n" if $time_to_erase > 0;
+info "Used disk space deltas (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
 info "All done. Exiting.\n";
 exit 0;
 
@@ -500,6 +512,30 @@ sub IdentifyOldBackups {
     }
 
     return($todelete, \ @inc_entries);
+}
+
+sub PrettySize {
+    my $bytes = shift;
+    my $abs = abs($bytes);
+    my $pretty = "$abs b";
+    $pretty = sprintf("%3.1f Kb",$abs/(1024))           if $abs > (1024);
+    $pretty = sprintf("%3.1f Mb",$abs/(1024*1024))      if $abs > (1024*1024);
+    $pretty = sprintf("%3.1f Gb",$abs/(1024*1024*1024)) if $abs > (1024*1024*1024);
+    $pretty = "-$pretty" if $bytes < 0;
+    $pretty;
+}
+
+sub FindDestUsedKilobytes {
+    my $fout = "/tmp/out.$$." . scalar(time);
+    if ($BACKUP_MODE eq "PUSH") {
+        MySystem("ssh -x $INCREMENTAL_USER_HOST \"df -k $QUOTED_INCREMENTAL_ROOT | tail -1\" >$fout 2>&1");
+    } else { # PULL or LOCAL
+        MySystem("df -k $QUOTED_INCREMENTAL_ROOT | tail -1 >$fout 2>&1");
+    }
+    my $out = `cat $fout`; unlink $fout;
+    # /dev/sda3      288370016 12629824 261091772   5% /
+    my $used = $1 if $out =~ /^.*?\s+\d+\s+(\d+)\s+\d+\s+\d+%/;  # using % to anchor on right
+    $used || 0;
 }
 
 END {
