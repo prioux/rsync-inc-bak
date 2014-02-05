@@ -290,7 +290,7 @@ sub ComputeUsedSpaces {
             my $prev  = $i >  0        ? $revs->[$i-1] : "";
             my $next  = $i <  @$revs-1 ? $revs->[$i+1] : "";
             my $done  = exists($DBrevs->{$rev}) && (! $prev || ($prev && exists($DBrevs->{$prev})));
-            print "Exists: $iPlus/$num $rev\n" if $done;
+            print "Exists: $iPlus/$num $rev\n" if $DEBUG && $done;
             next if $done;
             print "Scanning: $iPlus/$num $rev\n" if $DEBUG;
             my $qprev  = $prev ? &QuotedArg($prev) : "";
@@ -341,6 +341,7 @@ sub ReadDB {
         return $db;
     }
     while (my $line = <$fh>) {
+        next if $line =~ /^\s*$|^\s*#/;
         my ($space,$rev) = ($line =~ /^(\d+)\t(\S+)\n$/);
         my $base = $rev;
         $base =~ s/\.20\d\d-\d\d-\d\dT\d\d\d\d\d\d$//;
@@ -357,6 +358,16 @@ sub WriteDB {
 
     rename($file,"$file.bak");
     my $fh = IO::File->new($file,"w") or die "Can't write to '$file': $!\n";
+
+    print $fh <<HEADER;
+
+#
+# This file created automatically by $BASENAME version $VERSION .
+# It contains a database of used disk space (in Ks) for each incremental backup.
+# Nice reports can be generated with the command '$BASENAME show'.
+#
+
+HEADER
     
     foreach my $base (sort keys %$db) {
         my $dbrevs = $db->{$base};
