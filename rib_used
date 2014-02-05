@@ -212,7 +212,8 @@ sub ShowStats {
         my @dbrevs = sort keys %$dbrevs;
         @dbrevs = reverse(@dbrevs) if $REVERSE_DATES;
         foreach my $dbrev (@dbrevs) {
-            my $space = $dbrevs->{$dbrev} || 0;
+            my $spacedeps = $dbrevs->{$dbrev} || [];
+            my $space     = $spacedeps->[0]   || 0;
             my $pretty = $FORMAT_SIZES eq 'k' ? $space : &Pretty_K_Size($space);
             my ($date,$h,$m,$s) = ($dbrev =~ /\.(20\d\d-\d\d-\d\d)T(\d\d)(\d\d)(\d\d)$/);
             next if $BEFORE_DATE && $date gt $BEFORE_DATE;
@@ -287,23 +288,42 @@ sub ComputeUsedSpaces {
         for (my $i=0;$i<@$revs;$i++) {
             my $iPlus = $i+1;
             my $rev   = $revs->[$i];
-            my $prev  = $i >  0        ? $revs->[$i-1] : "";
-            my $next  = $i <  @$revs-1 ? $revs->[$i+1] : "";
-            my $done  = exists($DBrevs->{$rev}) && (! $prev || ($prev && exists($DBrevs->{$prev})));
+            my $prev  = $i >  0        ? $revs->[$i-1] : "-";
+            my $next  = $i <  @$revs-1 ? $revs->[$i+1] : "-";
+
+            my ($prevDT,$nextDT) = ($prev,$next);  # full ids...
+            $prevDT = $1 if $prev =~ /\.(20\d\d-\d\d-\d\dT\d\d\d\d\d\d)$/;  # ... replaced by just 2014-01-01T123456
+            $nextDT = $1 if $next =~ /\.(20\d\d-\d\d-\d\dT\d\d\d\d\d\d)$/;
+
+            # Figure out if we need to run this
+            my $dbdeps = $DBrevs->{$rev}; # do we have info about this having been computer in the past?
+            my $done  = defined($dbdeps)      &&  # a triplet: size, prev, next
+                        defined($dbdeps->[0]) &&  # size
+                        defined($dbdeps->[1]) &&  # prev, last time we computed the size
+                        defined($dbdeps->[2]);    # next, last time we computed the size
+            if ($done) { # was it computed the same way, with same prev and next?
+                my $cursig = $prevDT lt $nextDT ? "!$prevDT!$nextDT!" : "!$nextDT!$prevDT!";
+                my $dbsig  = "!" . $dbdeps->[1] . "!" . $dbdeps->[2] . "!";
+                $done = 0 if $cursig ne $dbsig;
+            }
             print "Exists: $iPlus/$num $rev\n" if $DEBUG && $done;
             next if $done;
+
+            # Run DU command
             print "Scanning: $iPlus/$num $rev\n" if $DEBUG;
-            my $qprev  = $prev ? &QuotedArg($prev) : "";
-            my $qnext  = $next ? &QuotedArg($next) : "";
+            my $qprev  = $prev ne "-" ? &QuotedArg($prev) : "";
+            my $qnext  = $next ne "-" ? &QuotedArg($next) : "";
             my $qrev   = &QuotedArg($rev);
             my $com    = "du -k -s $qprev $qnext $qrev"; # the order is important because of hard links!
             print " -> Command: $com\n" if $DEBUG >= 3;
             my @du_out = `$com`;
+
+            # Parse output
             my $sum    = $du_out[-1]; # only last line is interesting
             my $space  = $1 if $sum =~ /^(\d+)\s+/;
             print " -> Space found: $space\n" if $DEBUG >= 2;
             die "Can't find DU output for '$rev' ? Got : '$space'.\n" if $space eq "";
-            $DBrevs->{$rev} = $space;
+            $DBrevs->{$rev} = [ $space, $prevDT, $nextDT ]; # order of prev and next will be fixed by DB writer code
         }
     }
 }
@@ -342,12 +362,15 @@ sub ReadDB {
     }
     while (my $line = <$fh>) {
         next if $line =~ /^\s*$|^\s*#/;
-        my ($space,$rev) = ($line =~ /^(\d+)\t(\S+)\n$/);
+        my ($space,$rev,$d1,$d2) = ($line =~ /^(\d+)\t(\S+)\t?(\S*)\t?(\S*)\s*$/);
         my $base = $rev;
+        $d1 ||= "-";
+        $d2 ||= "-";
+        ($d1,$d2) = ($d2,$d1) if $d2 lt $d1;
         $base =~ s/\.20\d\d-\d\d-\d\dT\d\d\d\d\d\d$//;
         die "Wrong DB?!? REV=$rev; BASE=$base\n" if $rev eq $base;
         $db->{$base} ||= {};
-        $db->{$base}->{$rev} = $space;
+        $db->{$base}->{$rev} = [ $space, $d1, $d2 ];
     }
     $db;
 }
@@ -366,6 +389,12 @@ sub WriteDB {
 # It contains a database of used disk space (in Ks) for each incremental backup.
 # Nice reports can be generated with the command '$BASENAME show'.
 #
+# The format of this table is:
+#
+#   size   incremental_base_dump_name   surrounding_dump_1_datetime    surrounding_dump_2_datetime
+#
+# The two surrounding_dump values are used to identify which entries need to be recomputed.
+#
 
 HEADER
     
@@ -373,8 +402,12 @@ HEADER
         my $dbrevs = $db->{$base};
         next unless $dbrevs;
         foreach my $dbrev (sort keys %$dbrevs) {
-            my $space = $dbrevs->{$dbrev};
-            print $fh "$space\t$dbrev\n";
+            my $spacedeps = $dbrevs->{$dbrev};
+            my ($space,$d1,$d2) = @$spacedeps;
+            $d1 ||= "-";
+            $d2 ||= "-";
+            ($d1,$d2) = ($d2,$d1) if $d2 lt $d1;
+            print $fh "$space\t$dbrev\t$d1\t$d2\n";
         }
     }
     $fh->close();
