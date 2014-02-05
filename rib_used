@@ -1,0 +1,422 @@
+#!/usr/bin/perl -w
+
+##############################################################################
+#
+#                                 rib_used
+#
+# DESCRIPTION:
+# Creates and maintain a DB of local disk space for incremental rsync dumps
+#
+##############################################################################
+
+##############################################################################
+#                                                                            #
+#                       CONFIDENTIAL & PROPRIETARY                           #
+#       Nothing herein is to be disclosed in any way without the prior       #
+#           express written permission of Pierre Rioux                       #
+#                                                                            #
+#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
+#                                                                            #
+##############################################################################
+#
+#    $Id$
+#
+#    $Log$
+
+##########################
+# Initialization section #
+##########################
+
+require 5.00;
+use strict;
+use vars qw( $VERSION $RCS_VERSION );
+use IO::File;
+use Cwd;
+use File::Glob ':glob', ':case';
+use Date::Manip;
+
+# Default umask
+umask 027;
+
+# Program's name and version number.
+$RCS_VERSION='$Id: blahblah.pl,v 1.0 2007/11/08 18:40:36 prioux Exp $';
+($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+my ($BASENAME) = ($0 =~ /([^\/]+)$/);
+
+# Get login name.
+my $USER=getpwuid($<) || getlogin || die "Can't find USER from environment!\n";
+
+#########
+# Usage #
+#########
+
+sub Usage { # private
+    print <<USAGE;
+$BASENAME $VERSION
+
+Usage: $BASENAME [options] command dbfile inc_base [inc_base...]
+
+Options:
+
+  * Select incremental backup location:
+       [-D dir]          Directory of all incremental backups
+
+  * Commands:
+
+       update dbfile inc_base [inc_base...]
+          -> Will update the database file 'dbfile' in situ by scanning the inc_base(s)
+             Note: will purge ALL entries that do not match at least one inc_base !
+
+       show   dbfile inc_base [inc_base...]
+          -> Will show the used space for all the revisions inc_base.
+
+  * Options for 'show' command:
+       [-A afterdate]    Only report backups AFTER afterdate
+       [-B beforedate]   Only report backups BEFORE beforedate
+       [-h]              No headers
+       [-k]              All sizes in Kb
+       [-r]              Show reports in reverse order of dates
+
+About dates: They can be specified as:
+   2013        whole year
+   2013-04     year + month
+   2013-04-17  specific date
+   \@0          today
+   \@3          three days before today
+
+   Note: Date boundaries are inclusive.
+
+About the arguments:
+   The inc_base arguments are subpath to entire sets of incremental backups.
+   They should point to existing subdirectories under the -D dir option.
+   For instance, "amnesia/amnesia_root" or "netmind_vms/demo/demo_usr_local" etc.
+   Patterns can be used, e.g. "amnesia/*" or "*" or "*/*_root" etc.
+
+USAGE
+    exit 1;
+}
+
+##################################
+# Global variables and constants #
+##################################
+
+my $DEBUG=0;
+my $ALL_BACKUPS_BASEDIR=".";  # -D
+my $AFTER_DATE="";            # -A
+my $BEFORE_DATE="";           # -B
+my $NO_HEADERS=0;             # -h
+my $FORMAT_SIZES='pretty';    # -k
+my $REVERSE_DATES=0;          # -r
+my $COMMAND="";
+my $DBFILE="";
+
+##############################
+# Parse command-line options #
+##############################
+
+for (;@ARGV;) {
+    # Add in the regex [] ALL single-character command-line options
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DABkhr])(.*)$/);
+    last if ! defined $opt;
+    # Add in regex [] ONLY single-character options that
+    # REQUIRE an argument, except for the '@' debug switch.
+    if ($opt =~ /[DAB]/ && $arg eq "") {
+        if (@ARGV < 2) {
+            print "Argument required for option \"$opt\".\n";
+            exit 1;
+        }
+        shift;
+        $arg=$ARGV[0];
+    }
+    $DEBUG=($arg ? $arg : 1)                     if $opt eq '@';
+    $ALL_BACKUPS_BASEDIR=$arg                    if $opt eq 'D';
+    $BEFORE_DATE=$arg                            if $opt eq 'B';
+    $AFTER_DATE=$arg                             if $opt eq 'A';
+    $FORMAT_SIZES='k'                            if $opt eq 'k';
+    $NO_HEADERS=1                                if $opt eq 'h';
+    $REVERSE_DATES=1                             if $opt eq 'r';
+    shift;
+}
+
+#################################
+# Validate command-line options #
+#################################
+
+&Usage if @ARGV < 3;
+$COMMAND=uc shift;
+$DBFILE=shift;
+our @BASES = @ARGV; # and they belong to you.
+
+if ($COMMAND !~ /^(update|show)$/i) {
+    die "Command must be one of 'update' or 'show'.\n";
+}
+
+$AFTER_DATE  = &ValidateDate($AFTER_DATE)  if $AFTER_DATE;
+$BEFORE_DATE = &ValidateDate($BEFORE_DATE) if $BEFORE_DATE;
+
+
+################
+# Trap Signals #
+################
+
+sub SigCleanup { # private
+     die "\nExiting: received signal \"" . $_[0] . "\".\n";
+}
+$SIG{'INT'}  = \&SigCleanup;
+$SIG{'TERM'} = \&SigCleanup;
+$SIG{'HUP'}  = \&SigCleanup;
+$SIG{'QUIT'} = \&SigCleanup;
+$SIG{'PIPE'} = \&SigCleanup;
+$SIG{'ALRM'} = \&SigCleanup;
+
+###############################
+#   M A I N   P R O G R A M   #
+###############################
+
+our $FULL_DB=&ReadDB($DBFILE);
+
+
+if ($COMMAND eq "UPDATE") {
+    &UpdateDB($FULL_DB, \ @BASES);
+}
+
+if ($COMMAND eq "SHOW") {
+    &ShowStats($FULL_DB, \ @BASES);
+}
+
+exit 0;
+
+#############################
+#   S U B R O U T I N E S   #
+#############################
+
+sub ShowStats {
+    my $db = shift;
+    my $bases = shift;
+
+    my $matched_bases = &MatchOnceInOrder($bases, [ sort keys % $db ]);
+   
+    foreach my $base (@$matched_bases) {
+        unless ($NO_HEADERS) {
+            print "\n";
+            print "===================================\n";
+            print "$base\n";
+            print "===================================\n";
+            print "\n";
+        }
+        my $dbrevs = $db->{$base};
+        if (! $dbrevs) {
+            print "No entries in DB file for base '$base'.\n";
+            next;
+        }
+        my @dbrevs = sort keys %$dbrevs;
+        @dbrevs = reverse(@dbrevs) if $REVERSE_DATES;
+        foreach my $dbrev (@dbrevs) {
+            my $space = $dbrevs->{$dbrev} || 0;
+            my $pretty = $FORMAT_SIZES eq 'k' ? $space : &Pretty_K_Size($space);
+            my ($date,$h,$m,$s) = ($dbrev =~ /\.(20\d\d-\d\d-\d\d)T(\d\d)(\d\d)(\d\d)$/);
+            next if $BEFORE_DATE && $date gt $BEFORE_DATE;
+            next if $AFTER_DATE  && $date lt $AFTER_DATE;
+            my $time = "$h:$m:$s";
+            printf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
+        }
+    }
+}
+
+sub UpdateDB {
+    my $db = shift;
+    my $bases = shift;
+
+    # Save cwd and switch to base
+    my $cwd  = getcwd();
+    chdir($ALL_BACKUPS_BASEDIR) or die "Can't CD to '$ALL_BACKUPS_BASEDIR': $!\n";
+    my $all_revs = {};
+    foreach my $base (@$bases) {
+        my $revs = &FindAllRevs($base);
+        foreach my $rev (@$revs) {
+           $all_revs->{$rev}++;
+        }
+    }
+
+    my @sorted_all_revs = sort keys %$all_revs;
+    my $base2revs={};
+    foreach my $rev (@sorted_all_revs) {
+        next unless $rev =~ /^(\S+)\.20\d\d-\d\d-\d\dT\d\d\d\d\d\d$/;
+        my $base = $1;
+        my $list = $base2revs->{$base} ||= [];
+        push(@$list,$rev);
+    }
+
+    &PruneOldRevs(     $db, $base2revs);
+    &ComputeUsedSpaces($db, $base2revs);
+
+    chdir($cwd) or die "Can't CD back to '$cwd': $!\n";
+    &WriteDB($DBFILE, $db);
+}
+
+
+sub QuotedArg {
+    my $arg = shift;
+    $arg =~ s/'/'\\''/g;
+    $arg = "'$arg'";
+    $arg;
+}
+
+sub FindAllRevs {
+    my $base  = shift;
+    my @all_bases = bsd_glob("$base.20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]");
+    my $bases = [];
+    foreach my $base (@all_bases) {
+      next unless $base =~ /\.(20\d\d-\d\d-\d\d)T\d\d\d\d\d\d$/;
+      #my $date = $1;
+      #next if $BEFORE_DATE && $date gt $BEFORE_DATE;
+      #next if $AFTER_DATE  && $date lt $AFTER_DATE;
+      push(@$bases,$base);
+    }
+    $bases;
+}
+
+sub ComputeUsedSpaces {
+    my $db        = shift;
+    my $base2revs = shift;
+
+    foreach my $base (sort keys %$base2revs) {
+        my $revs = $base2revs->{$base} || [];
+        my $num  = @$revs;
+        my $DBrevs = $db->{$base} ||= {};
+        for (my $i=0;$i<@$revs;$i++) {
+            my $iPlus = $i+1;
+            my $rev   = $revs->[$i];
+            my $prev  = $i >  0        ? $revs->[$i-1] : "";
+            my $next  = $i <  @$revs-1 ? $revs->[$i+1] : "";
+            my $done  = exists($DBrevs->{$rev}) && (! $prev || ($prev && exists($DBrevs->{$prev})));
+            print "Exists: $iPlus/$num $rev\n" if $done;
+            next if $done;
+            print "Scanning: $iPlus/$num $rev\n" if $DEBUG;
+            my $qprev  = $prev ? &QuotedArg($prev) : "";
+            my $qnext  = $next ? &QuotedArg($next) : "";
+            my $qrev   = &QuotedArg($rev);
+            my $com    = "du -k -s $qprev $qnext $qrev"; # the order is important because of hard links!
+            print " -> Command: $com\n" if $DEBUG >= 3;
+            my @du_out = `$com`;
+            my $sum    = $du_out[-1]; # only last line is interesting
+            my $space  = $1 if $sum =~ /^(\d+)\s+/;
+            print " -> Space found: $space\n" if $DEBUG >= 2;
+            die "Can't find DU output for '$rev' ? Got : '$space'.\n" if $space eq "";
+            $DBrevs->{$rev} = $space;
+        }
+    }
+}
+
+sub PruneOldRevs {
+    my $db        = shift;
+    my $base2revs = shift;
+
+    foreach my $base (keys %$db) {
+        next if $base2revs->{$base};
+        print "Purging DB of base: $base\n" if $DEBUG;
+        delete $db->{$base};
+    }
+    foreach my $base (keys %$db) {
+        my $revs   = $base2revs->{$base} || {};
+        my $revsH  = {};
+        foreach my $rev (@$revs) {
+            $revsH->{$rev} = 1;
+        }
+        my $dbrevs = $db->{$base}        || {};
+        foreach my $dbrev (keys %$dbrevs) {
+           next if exists($revsH->{$dbrev});
+           print "Purging DB of revision: $dbrev\n" if $DEBUG;
+           delete $dbrevs->{$dbrev};
+        }
+    }
+}
+
+sub ReadDB {
+    my $file = shift;
+    my $db = {};
+    my $fh = IO::File->new($file,"r");
+    if (!$fh) {
+        print "No DB '$file' found... will be created.\n" if $DEBUG;
+        return $db;
+    }
+    while (my $line = <$fh>) {
+        my ($space,$rev) = ($line =~ /^(\d+)\t(\S+)\n$/);
+        my $base = $rev;
+        $base =~ s/\.20\d\d-\d\d-\d\dT\d\d\d\d\d\d$//;
+        die "Wrong DB?!? REV=$rev; BASE=$base\n" if $rev eq $base;
+        $db->{$base} ||= {};
+        $db->{$base}->{$rev} = $space;
+    }
+    $db;
+}
+
+sub WriteDB {
+    my $file = shift;
+    my $db   = shift;
+
+    rename($file,"$file.bak");
+    my $fh = IO::File->new($file,"w") or die "Can't write to '$file': $!\n";
+    
+    foreach my $base (sort keys %$db) {
+        my $dbrevs = $db->{$base};
+        next unless $dbrevs;
+        foreach my $dbrev (sort keys %$dbrevs) {
+            my $space = $dbrevs->{$dbrev};
+            print $fh "$space\t$dbrev\n";
+        }
+    }
+    $fh->close();
+}
+
+sub Pretty_K_Size {
+    my $kbytes = shift; # size in kilobytes !
+    my $pretty = "$kbytes Kb";
+    $pretty = sprintf("%3.1f Mb",$kbytes/(1024))           if $kbytes > (1024);
+    $pretty = sprintf("%3.1f Gb",$kbytes/(1024*1024))      if $kbytes > (1024*1024);
+    $pretty = sprintf("%3.1f Tb",$kbytes/(1024*1024*1024)) if $kbytes > (1024*1024*1024);
+    $pretty;
+}
+
+sub ValidateDate {
+  my $date = shift;
+  if ($date =~ /^\@(\d+)$/) {
+    my $ago = ParseDate("$1 days ago");
+    my $tt  = UnixDate($ago,"%Y-%m-%d");
+    print STDERR "Computed past date: $tt\n" if $DEBUG;
+    return $tt;
+  }
+  if ($date !~ /^\d\d\d\d(-\d\d(-\d\d)?)?$/) {
+    die "Illegal date format: should be YYYY or YYYY-MM or YYYY-MM-DD or \@nn\n";
+  }
+  return $date;
+}
+
+sub MatchOnceInOrder {
+    my $patterns = shift; # array of file patterns
+    my $bases    = shift;
+
+    my @regexps = ();
+    foreach my $pat (@$patterns) {
+       my $re = $pat;
+       $re =~ s/\*/.*/g;
+       $re =~ s/\?/./g;
+       push(@regexps,$re);
+    }
+
+    my @selected = ();
+    my %selected = ();
+    my @dest_bases = @$bases;
+    foreach my $re (@regexps) {
+       @dest_bases = grep( ! $selected{$_}, @dest_bases );
+       last if @dest_bases == 0;
+       foreach my $base (@$bases) {
+           next unless eval { $base =~ m!^$re$! };
+           push(@selected, $base);
+           $selected{$base} = 1;
+       }
+    }
+
+    \ @selected;
+}
+

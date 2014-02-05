@@ -1,0 +1,343 @@
+#!/usr/bin/perl -w
+
+##############################################################################
+#
+#                                 rib_explore
+#
+# DESCRIPTION:
+# Explore versions of files on a rsync-incremental-backup dump set.
+#
+##############################################################################
+
+##############################################################################
+#                                                                            #
+#                       CONFIDENTIAL & PROPRIETARY                           #
+#       Nothing herein is to be disclosed in any way without the prior       #
+#           express written permission of Pierre Rioux                       #
+#                                                                            #
+#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
+#                                                                            #
+##############################################################################
+#
+#    $Id$
+#
+#    $Log$
+
+##########################
+# Initialization section #
+##########################
+
+require 5.00;
+use strict;
+use vars qw( $VERSION $RCS_VERSION );
+use IO::File;
+use Cwd;
+use File::Glob ':glob', ':case';
+use Date::Manip;
+
+# Default umask
+umask 027;
+
+# Program's name and version number.
+$RCS_VERSION='$Id: blahblah.pl,v 0.1 2007/11/08 18:40:36 prioux Exp $';
+($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+my ($BASENAME) = ($0 =~ /([^\/]+)$/);
+
+# Get login name.
+my $USER=getpwuid($<) || getlogin || die "Can't find USER from environment!\n";
+
+#########
+# Usage #
+#########
+
+sub Usage { # private
+    print <<USAGE;
+
+$BASENAME $VERSION
+
+Usage: $BASENAME [options] basepattern filepattern
+
+Options:
+
+  * Select incremental backup location:
+       [-D dir]          Directory of all incremental backups
+
+  * Select reports:
+       [-c sdiff] Run 'sdiff file_A file_b' for files in CHG mode
+
+  * Filter reports:
+       [-A afterdate]    Only report backups AFTER afterdate
+       [-B beforedate]   Only report backups BEFORE beforedate
+       [-F]              Full report: Do not collapse duplicate events
+       [-I]              Ignore filepattern arguments that mathc directories
+
+About dates: They can be specified as:
+   2013        whole year
+   2013-04     year + month
+   2013-04-17  specific date
+   \@0          today
+   \@3          three days before today
+
+   Note: Date boundaries are inclusive.
+
+About the arguments:
+   The inc_base arguments are subpath to entire sets of incremental backups.
+   They should point to existing subdirectories under the -D dir option.
+   For instance, "amnesia/amnesia_root" or "netmind_vms/demo/demo_usr_local" etc.
+USAGE
+
+    exit 1;
+}
+
+##################################
+# Global variables and constants #
+##################################
+
+my $DEBUG=0;
+my $BACKUP_ROOT=".";  # -D dir
+my $FULL_REPORT=0;    # -F
+my $IGNORE_DIRS=0;    # -I
+my $AFTER_DATE="";    # -A
+my $BEFORE_DATE="";   # -B
+my $DIFF_COMM="";     # -c
+
+##############################
+# Parse command-line options #
+##############################
+
+for (;@ARGV;) {
+    # Add in the regex [] ALL single-character command-line options
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@ABDFIc])(.*)$/);
+    last if ! defined $opt;
+    # Add in regex [] ONLY single-character options that
+    # REQUIRE an argument, except for the '@' debug switch.
+    if ($opt =~ /[cDAB]/ && $arg eq "") {
+        if (@ARGV < 2) {
+            print "Argument required for option \"$opt\".\n";
+            exit 1;
+        }
+        shift;
+        $arg=$ARGV[0];
+    }
+    $DEBUG=($arg ? $arg : 1)                     if $opt eq '@';
+    $BACKUP_ROOT = $arg                          if $opt eq 'D';
+    $FULL_REPORT = 1                             if $opt eq 'F';
+    $IGNORE_DIRS = 1                             if $opt eq 'I';
+    $BEFORE_DATE=$arg                            if $opt eq 'B';
+    $AFTER_DATE=$arg                             if $opt eq 'A';
+    $DIFF_COMM=$arg                              if $opt eq 'c';
+
+    shift;
+}
+
+#################################
+# Validate command-line options #
+#################################
+
+&Usage if @ARGV != 2;
+my $BASE        = shift;
+my $FILEPATTERN = shift;
+
+$AFTER_DATE  = &ValidateDate($AFTER_DATE)  if $AFTER_DATE;
+$BEFORE_DATE = &ValidateDate($BEFORE_DATE) if $BEFORE_DATE;
+
+
+################
+# Trap Signals #
+################
+
+sub SigCleanup { # private
+     die "\nExiting: received signal \"" . $_[0] . "\".\n";
+}
+$SIG{'INT'}  = \&SigCleanup;
+$SIG{'TERM'} = \&SigCleanup;
+$SIG{'HUP'}  = \&SigCleanup;
+$SIG{'QUIT'} = \&SigCleanup;
+$SIG{'PIPE'} = \&SigCleanup;
+$SIG{'ALRM'} = \&SigCleanup;
+
+###############################
+#   M A I N   P R O G R A M   #
+###############################
+
+# Save cwd and switch to base
+my $cwd  = getcwd();
+chdir($BACKUP_ROOT) or die "Can't chdir to '$BACKUP_ROOT': $!\n";
+
+my $ALL_BASES=&FindAllBases($BASE);
+die "No rsync-incremental-backup base found that match '$BASE'.\n"
+    if @$ALL_BASES == 0;
+print STDERR join("\n",@$ALL_BASES),"\n" if $DEBUG;
+
+my $FILES_BY_BASE = {};
+foreach my $base (@$ALL_BASES) {
+    my $list_stat = &FindGlobList($base,$FILEPATTERN); # entry -> stat()
+    if ($DEBUG) {
+        print STDERR "On $base :\n";
+        foreach my $entry (sort keys %$list_stat) {
+           my $stat = $list_stat->{$entry};
+           print STDERR " -> ",$entry,"\t",join(",",@$stat),"\n";
+        }
+    }
+    $FILES_BY_BASE->{$base} = $list_stat;
+}
+chdir($cwd) or die "Can't return to cwd '$cwd': $!\n";
+
+&PrintReport($ALL_BASES,$FILES_BY_BASE);
+
+exit 0;
+
+#############################
+#   S U B R O U T I N E S   #
+#############################
+
+sub FindAllBases {
+    my $base  = shift;
+    my @all_bases = bsd_glob("$base.20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]");
+    my $bases = [];
+    foreach my $base (@all_bases) {
+      next unless $base =~ /\.(20\d\d-\d\d-\d\d)T\d\d\d\d\d\d$/;
+      my $date = $1;
+      next if $BEFORE_DATE && $date gt $BEFORE_DATE;
+      next if $AFTER_DATE  && $date lt $AFTER_DATE;
+      push(@$bases,$base);
+    }
+    $bases;
+}
+
+sub FindGlobList {
+    my $base    = shift;
+    my $pattern = shift;
+
+    my $cwd  = getcwd();
+    chdir($base) or die "Can't chdir to '$base': $!\n";
+    my @entries = bsd_glob("$pattern");
+
+    my $list_stat = {};
+    foreach my $entry (@entries) {
+        my @stat   = stat($entry);
+        my $is_dir = @stat && -d _;
+        next if $IGNORE_DIRS && $is_dir;
+        $list_stat->{$entry} = [ @stat ] if @stat # undef otherwise
+    }
+
+    chdir($cwd) or die "Can't return to cwd '$cwd': $!\n";
+
+    $list_stat;
+}
+
+sub UniqFiles {
+    my $bases       = shift;  # [ "a/b.date1", "a/b.date2" ]
+    my $base2f2stat = shift;  # { "a/b.date1" => { "x/y/z" => stat(z), "x/y/z2" => stat(z2)... } ... }
+    my $uniq_files = {};
+    foreach my $base (@$bases) {
+      my $f2stat = $base2f2stat->{$base} || {};
+      foreach my $file (keys %$f2stat) {
+        $uniq_files->{$file}++;
+      }
+    }
+    $uniq_files;
+}
+
+sub CoreBases2Versions {
+    my $bases = shift;
+
+    my $core2versions = {};
+    foreach my $base (sort @$bases) {
+        next unless $base =~ /^(.*)\.20\d\d-\d\d-\d\dT\d\d\d\d\d\d$/;
+        my $core = $1;
+        my $list = $core2versions->{$core} ||= [];
+        push(@$list,$base);
+    }
+    $core2versions;
+}
+
+sub ValidateDate {
+  my $date = shift;
+  if ($date =~ /^\@(\d+)$/) {
+    my $ago = ParseDate("$1 days ago");
+    my $tt  = UnixDate($ago,"%Y-%m-%d");
+    print STDERR "Computed past date: $tt\n" if $DEBUG;
+    return $tt;
+  }
+  if ($date !~ /^\d\d\d\d(-\d\d(-\d\d)?)?$/) {
+    die "Illegal date format: should be YYYY or YYYY-MM or YYYY-MM-DD or \@nn\n";
+  }
+  return $date;
+}
+
+
+sub PrintReport {
+    my $bases       = shift;  # [ "a/b.date1", "a/b.date2" ]
+    my $base2f2stat = shift;  # { "a/b.date1" => { "x/y/z" => stat(z), "x/y/z2" => stat(z2)... } ... }
+
+    my $uniq_files    = &UniqFiles($bases,$base2f2stat);
+    my $core2versions = &CoreBases2Versions($bases);
+
+    foreach my $file (sort keys %$uniq_files) {
+      my $file_report = "";
+      foreach my $core (sort keys %$core2versions) {
+          $file_report .= &GenerateCoreReport($file,$core,$core2versions->{$core},$base2f2stat);
+      }
+      if ($FULL_REPORT || $file_report ne "") {
+          print "\nEntry: $file\n", $file_report;
+      }
+    } # for each file
+}
+
+sub GenerateCoreReport {
+    my $file        = shift;
+    my $core        = shift;
+    my $versions    = shift;
+    my $base2f2stat = shift;
+
+    my $prevstat     = "-first-";
+    my $prev_keyword = "";
+    my $ver_report   = "";
+    my $prev_base    = "";
+
+    foreach my $base (@$versions) {
+        my $f2stat     = $base2f2stat->{$base};
+        my $stat       = $f2stat->{$file};  # can be undef, or empty array, or array with stat info
+        # ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+        #  $atime,$mtime,$ctime,$blksize,$blocks)
+
+        my $keyword  = "";
+        my $diff_out = "";
+        if (defined($prevstat) && $prevstat eq '-first-') {  # special case for first appearance
+          $keyword = "-"        if !defined($stat);
+          $keyword = "SAME"     if  defined($stat);
+        } else { # all other cases
+          $keyword = "-"        if !defined($stat) && !defined($prevstat);
+          $keyword = "NEW"      if  defined($stat) && !defined($prevstat);
+          $keyword = "DEL"      if !defined($stat) &&  defined($prevstat);
+          if (!$keyword) { # both stats exists, detect changes
+             my $prevSig = join(",",@$prevstat);
+             my $curSig  = join(",",@$stat);
+             $keyword = $prevSig eq $curSig ? "SAME" : "CHG";
+             if ($DIFF_COMM && $prev_base && $keyword eq 'CHG') {
+                 $diff_out = `$DIFF_COMM $BACKUP_ROOT/$prev_base/$file $BACKUP_ROOT/$base/$file`;
+             }
+          }
+        }
+
+        if ($FULL_REPORT || $keyword ne $prev_keyword) {
+          $ver_report .= sprintf "    %-4s %s\n", $keyword,$base;
+          if ($diff_out) {
+             $ver_report .= "* * * Start Of Diff * * *\n" .
+                            $diff_out .
+                            "* * * End Of Diff * * *\n";
+          }
+        }
+
+        $prevstat     = $stat;
+        $prev_keyword = $keyword;
+        $prev_base    = $base;
+    }
+
+    if ($FULL_REPORT || $ver_report ne "") {
+        return "  Dump: $core\n" . $ver_report;
+    }
+    return "";
+}
+
