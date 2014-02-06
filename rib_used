@@ -73,9 +73,15 @@ Options:
   * Options for 'show' command:
        [-A afterdate]    Only report backups AFTER afterdate
        [-B beforedate]   Only report backups BEFORE beforedate
+       [-m size]         Only report backups using more than 'size'
+       [-M size]         Only report backups using less than 'size'
        [-h]              No headers
-       [-k]              All sizes in Kb
+       [-k]              All sizes will be reported in Kb
        [-r]              Show reports in reverse order of dates
+
+About sizes:
+   They can be specified with suffixes, e.g. "1k", "22m", "22G", "5T";
+   note that this program tracks disk sizes in integer multiples of kilobytes.
 
 About dates: They can be specified as:
    2013        whole year
@@ -107,6 +113,8 @@ my $BEFORE_DATE="";           # -B
 my $NO_HEADERS=0;             # -h
 my $FORMAT_SIZES='pretty';    # -k
 my $REVERSE_DATES=0;          # -r
+my $MIN_SIZE=0;                     # -m
+my $MAX_SIZE=999_999_999_999_999;   # -M
 my $COMMAND=(@ARGV > 0 && $ARGV[0] =~ /update|show/i) ? uc(shift(@ARGV)) : "";
 my $DBFILE="";
 
@@ -116,11 +124,11 @@ my $DBFILE="";
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DABkhr])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DABkhrmM])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
-    if ($opt =~ /[DAB]/ && $arg eq "") {
+    if ($opt =~ /[DABmM]/ && $arg eq "") {
         if (@ARGV < 2) {
             print "Argument required for option \"$opt\".\n";
             exit 1;
@@ -135,6 +143,8 @@ for (;@ARGV;) {
     $FORMAT_SIZES='k'                            if $opt eq 'k';
     $NO_HEADERS=1                                if $opt eq 'h';
     $REVERSE_DATES=1                             if $opt eq 'r';
+    $MIN_SIZE=&ValidSize($arg)                   if $opt eq 'm';
+    $MAX_SIZE=&ValidSize($arg)                   if $opt eq 'M';
     shift;
 }
 
@@ -201,13 +211,6 @@ sub ShowStats {
     my $matched_bases = &MatchOnceInOrder($bases, [ sort keys % $db ]);
    
     foreach my $base (@$matched_bases) {
-        unless ($NO_HEADERS) {
-            print "\n";
-            print "===================================\n";
-            print "$base\n";
-            print "===================================\n";
-            print "\n";
-        }
         my $dbrevs = $db->{$base};
         if (! $dbrevs) {
             print "No entries in DB file for base '$base'.\n";
@@ -215,16 +218,29 @@ sub ShowStats {
         }
         my @dbrevs = sort keys %$dbrevs;
         @dbrevs = reverse(@dbrevs) if $REVERSE_DATES;
+        my $report = "";
         foreach my $dbrev (@dbrevs) {
             my $spacedeps = $dbrevs->{$dbrev} || [];
             my $space     = $spacedeps->[0]   || 0;
+            next if $space*1024 < $MIN_SIZE;
+            next if $space*1024 > $MAX_SIZE;
             my $pretty = $FORMAT_SIZES eq 'k' ? $space : &Pretty_K_Size($space);
             my ($date,$h,$m,$s) = ($dbrev =~ /\.(20\d\d-\d\d-\d\d)T(\d\d)(\d\d)(\d\d)$/);
             next if $BEFORE_DATE && $date gt $BEFORE_DATE;
             next if $AFTER_DATE  && $date lt $AFTER_DATE;
             my $time = "$h:$m:$s";
-            printf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
+            $report .= sprintf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
         }
+        if ($report && ! $NO_HEADERS) {
+            $report =
+            "\n" .
+            "===================================\n" .
+            "$base\n" .
+            "===================================\n" .
+            "\n" .
+            $report
+        }
+        print $report;
     }
 }
 
@@ -465,5 +481,18 @@ sub MatchOnceInOrder {
     }
 
     \ @selected;
+}
+
+sub ValidSize {
+  my $size = shift; # can be any int optionally followed by k, m, g or t
+  die "Values for -m -M -c and -C should be int, optionally followed by K, M, G or T\n"
+    unless $size =~ /^\s*(\d+)\s*([kmgt]?)\s*$/i;
+  my ($val,$suffix) = ($1,$2);
+  return $val                             if $suffix eq "";
+  return $val * 1024                      if $suffix =~ /k/i;
+  return $val * 1024 * 1024               if $suffix =~ /m/i;
+  return $val * 1024 * 1024 * 1024        if $suffix =~ /g/i;
+  return $val * 1024 * 1024 * 1024 * 1024 if $suffix =~ /t/i;
+  die "Oh oh.\n";
 }
 
