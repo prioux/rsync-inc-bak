@@ -54,7 +54,7 @@ sub Usage { # private
     print <<USAGE;
 $BASENAME $VERSION
 
-Usage: $BASENAME [options] command dbfile inc_base [inc_base...]
+Usage: $BASENAME command [options] dbfile [inc_base] [inc_base...]
 
 Options:
 
@@ -67,7 +67,7 @@ Options:
           -> Will update the database file 'dbfile' in situ by scanning the inc_base(s)
              Note: will purge ALL entries that do not match at least one inc_base !
 
-       show   dbfile inc_base [inc_base...]
+       show   dbfile [inc_base] [inc_base...]
           -> Will show the used space for all the revisions inc_base.
 
   * Options for 'show' command:
@@ -107,7 +107,7 @@ my $BEFORE_DATE="";           # -B
 my $NO_HEADERS=0;             # -h
 my $FORMAT_SIZES='pretty';    # -k
 my $REVERSE_DATES=0;          # -r
-my $COMMAND="";
+my $COMMAND=(@ARGV > 0 && $ARGV[0] =~ /update|show/i) ? uc(shift(@ARGV)) : "";
 my $DBFILE="";
 
 ##############################
@@ -142,8 +142,10 @@ for (;@ARGV;) {
 # Validate command-line options #
 #################################
 
-&Usage if @ARGV < 3;
-$COMMAND=uc shift;
+# We support invoking the program with the command before or after the options...
+
+&Usage if ($COMMAND eq "" && @ARGV < 2) || @ARGV < 1;
+$COMMAND ||= uc shift;
 $DBFILE=shift;
 our @BASES = @ARGV; # and they belong to you.
 
@@ -175,12 +177,14 @@ $SIG{'ALRM'} = \&SigCleanup;
 
 our $FULL_DB=&ReadDB($DBFILE);
 
-
 if ($COMMAND eq "UPDATE") {
+    &Usage unless @BASES > 0;
     &UpdateDB($FULL_DB, \ @BASES);
+    &WriteDB($DBFILE, $FULL_DB);
 }
 
 if ($COMMAND eq "SHOW") {
+    @BASES = ( '*' ) if @BASES == 0;
     &ShowStats($FULL_DB, \ @BASES);
 }
 
@@ -252,7 +256,6 @@ sub UpdateDB {
     &ComputeUsedSpaces($db, $base2revs);
 
     chdir($cwd) or die "Can't CD back to '$cwd': $!\n";
-    &WriteDB($DBFILE, $db);
 }
 
 
