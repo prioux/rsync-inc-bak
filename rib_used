@@ -236,14 +236,15 @@ sub ShowStats {
             next if $BEFORE_DATE && $date gt $BEFORE_DATE;
             next if $AFTER_DATE  && $date lt $AFTER_DATE;
             my $time = "$h:$m:$s";
-            $report .= sprintf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
+            #$report .= sprintf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
+            $report .= sprintf "%9s %s %s %s\n",$pretty,$date,$time,$base;
         }
         if ($report && ! $NO_HEADERS) {
             $report =
             "\n" .
-            "===================================\n" .
+            "========================================================================\n" .
             "$base\n" .
-            "===================================\n" .
+            "========================================================================\n" .
             "\n" .
             $report
         }
