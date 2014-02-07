@@ -79,6 +79,10 @@ Options:
        [-k]              All sizes will be reported in Kb
        [-r]              Show reports in reverse order of dates
 
+  * Options for 'update' command:
+       [-P]              Will purge from the DB all inc_bases that
+                         are not supplied on the command-line!
+
 About sizes:
    They can be specified with suffixes, e.g. "1k", "22m", "22G", "5T";
    note that this program tracks disk sizes in integer multiples of kilobytes.
@@ -107,14 +111,16 @@ USAGE
 ##################################
 
 my $DEBUG=0;
-my $ALL_BACKUPS_BASEDIR=".";  # -D
-my $AFTER_DATE="";            # -A
-my $BEFORE_DATE="";           # -B
-my $NO_HEADERS=0;             # -h
-my $FORMAT_SIZES='pretty';    # -k
-my $REVERSE_DATES=0;          # -r
+my $ALL_BACKUPS_BASEDIR=".";        # -D
+my $AFTER_DATE="";                  # -A
+my $BEFORE_DATE="";                 # -B
+my $NO_HEADERS=0;                   # -h
+my $FORMAT_SIZES='pretty';          # -k
+my $REVERSE_DATES=0;                # -r
 my $MIN_SIZE=0;                     # -m
 my $MAX_SIZE=999_999_999_999_999;   # -M
+my $PURGE_ALL=0;                    # -P
+
 my $COMMAND=(@ARGV > 0 && $ARGV[0] =~ /update|show/i) ? uc(shift(@ARGV)) : "";
 my $DBFILE="";
 
@@ -124,7 +130,7 @@ my $DBFILE="";
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@DABkhrmM])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@PDABkhrmM])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
@@ -145,6 +151,7 @@ for (;@ARGV;) {
     $REVERSE_DATES=1                             if $opt eq 'r';
     $MIN_SIZE=&ValidSize($arg)                   if $opt eq 'm';
     $MAX_SIZE=&ValidSize($arg)                   if $opt eq 'M';
+    $PURGE_ALL=1                                 if $opt eq 'P';
     shift;
 }
 
@@ -351,13 +358,16 @@ sub PruneOldRevs {
     my $db        = shift;
     my $base2revs = shift;
 
-    foreach my $base (keys %$db) {
-        next if $base2revs->{$base};
-        print "Purging DB of base: $base\n" if $DEBUG;
-        delete $db->{$base};
+    if ($PURGE_ALL) {
+        foreach my $base (keys %$db) {
+            next if $base2revs->{$base};
+            print "Purging DB of base: $base\n" if $DEBUG;
+            delete $db->{$base};
+        }
     }
     foreach my $base (keys %$db) {
-        my $revs   = $base2revs->{$base} || {};
+        my $revs   = $base2revs->{$base};
+        next unless $revs;
         my $revsH  = {};
         foreach my $rev (@$revs) {
             $revsH->{$rev} = 1;
