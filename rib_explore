@@ -68,7 +68,7 @@ Options:
   * Filter reports:
        [-A afterdate]    Only report backups AFTER afterdate
        [-B beforedate]   Only report backups BEFORE beforedate
-       [-F]              Full report: Do not collapse duplicate events
+       [-F]              Full report: shows events when files stayed the same
        [-I]              Ignore filepattern arguments that mathc directories
 
 About dates: They can be specified as:
@@ -306,7 +306,7 @@ sub GenerateCoreReport {
         my $diff_out = "";
         if (defined($prevstat) && $prevstat eq '-first-') {  # special case for first appearance
           $keyword = "-"        if !defined($stat);
-          $keyword = "SAME"     if  defined($stat);
+          $keyword = "1ST"      if  defined($stat);
         } else { # all other cases
           $keyword = "-"        if !defined($stat) && !defined($prevstat);
           $keyword = "NEW"      if  defined($stat) && !defined($prevstat);
@@ -321,7 +321,7 @@ sub GenerateCoreReport {
           }
         }
 
-        if ($FULL_REPORT || $keyword ne $prev_keyword) {
+        if ($FULL_REPORT || ! ($keyword eq "SAME")) {
           $ver_report .= sprintf "    %-4s %s\n", $keyword,$base;
           if ($diff_out) {
              $ver_report .= "* * * Start Of Diff * * *\n" .
