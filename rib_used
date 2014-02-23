@@ -39,7 +39,7 @@ use Date::Manip;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 1.0 2007/11/08 18:40:36 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 1.1 2007/11/08 18:40:36 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -78,6 +78,7 @@ Options:
        [-h]              No headers
        [-k]              All sizes will be reported in Kb
        [-r]              Show reports in reverse order of dates
+       [-H]              Show histogram
 
   * Options for 'update' command:
        [-P]              Will purge from the DB all inc_bases that
@@ -120,6 +121,7 @@ my $REVERSE_DATES=0;                # -r
 my $MIN_SIZE=0;                     # -m
 my $MAX_SIZE=999_999_999_999_999;   # -M
 my $PURGE_ALL=0;                    # -P
+my $SHOW_HISTO=0;                   # -H
 
 my $COMMAND=(@ARGV > 0 && $ARGV[0] =~ /update|show/i) ? uc(shift(@ARGV)) : "";
 my $DBFILE="";
@@ -130,7 +132,7 @@ my $DBFILE="";
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@PDABkhrmM])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@PDABkhrmMH])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
@@ -152,6 +154,7 @@ for (;@ARGV;) {
     $MIN_SIZE=&ValidSize($arg)                   if $opt eq 'm';
     $MAX_SIZE=&ValidSize($arg)                   if $opt eq 'M';
     $PURGE_ALL=1                                 if $opt eq 'P';
+    $SHOW_HISTO=1                                if $opt eq 'H';
     shift;
 }
 
@@ -225,20 +228,47 @@ sub ShowStats {
         }
         my @dbrevs = sort keys %$dbrevs;
         @dbrevs = reverse(@dbrevs) if $REVERSE_DATES;
-        my $report = "";
+
+        my @reports = ();
+        my $histo_min = 999_999_999; # in Ks
+        my $histo_max = 0;           # in Ks
+        my @histo_vals = ();
         foreach my $dbrev (@dbrevs) {
             my $spacedeps = $dbrevs->{$dbrev} || [];
             my $space     = $spacedeps->[0]   || 0;
+
+            # Filter
             next if $space*1024 < $MIN_SIZE;
             next if $space*1024 > $MAX_SIZE;
+
+            # Generate pretty report line
             my $pretty = $FORMAT_SIZES eq 'k' ? $space : &Pretty_K_Size($space);
             my ($date,$h,$m,$s) = ($dbrev =~ /\.(20\d\d-\d\d-\d\d)T(\d\d)(\d\d)(\d\d)$/);
             next if $BEFORE_DATE && $date gt $BEFORE_DATE;
             next if $AFTER_DATE  && $date lt $AFTER_DATE;
             my $time = "$h:$m:$s";
-            #$report .= sprintf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
-            $report .= sprintf "%9s %s %s %s\n",$pretty,$date,$time,$base;
+            #my $report = sprintf "%9s\t%s\t%s\t%s\n",$pretty,$base,$date,$time;
+            my $report = sprintf "%9s %s %s %s\n",$pretty,$date,$time,$base;
+            push(@reports,$report);
+
+            # Record info for histogram
+            $histo_min = $space if $space < $histo_min;
+            $histo_max = $space if $space > $histo_max;
+            push(@histo_vals,$space);
         }
+
+        if ($SHOW_HISTO) {
+            my $diff = $histo_max - $histo_min; $diff = 1 if $diff < 1;
+            for (my $i=0;$i<@histo_vals;$i++) {
+                my $val = $histo_vals[$i] || $histo_min;
+                my $offset = $val - $histo_min; $offset = 0 if $offset < 0;
+                my $stars  = 1+int(10*$offset/$diff); $stars = 10 if $stars > 10;
+                my $line = sprintf "%-10s", ("*" x $stars);
+                $reports[$i] = "$line " .  $reports[$i];
+            }
+        }
+
+        my $report = join("",@reports);
         if ($report && ! $NO_HEADERS) {
             $report =
             "\n" .
@@ -387,6 +417,7 @@ sub ReadDB {
     my $db = {};
     my $fh = IO::File->new($file,"r");
     if (!$fh) {
+        die "Cannot read DB file '$file': $!\n" if $COMMAND ne "update";
         print "No DB '$file' found... will be created.\n" if $DEBUG;
         return $db;
     }
