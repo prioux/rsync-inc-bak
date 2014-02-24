@@ -39,7 +39,7 @@ use Date::Manip;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 0.1 2007/11/08 18:40:36 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 1.0 2007/11/08 18:40:36 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -63,13 +63,17 @@ Options:
        [-D dir]          Directory of all incremental backups
 
   * Select reports:
-       [-c sdiff] Run 'sdiff file_A file_b' for files in CHG mode
+       [-c sdiff]        Run 'sdiff file_A file_b' for files in CHG mode
+
+  * Report options:
+       [-S]              Show statistics for each file, per base.
 
   * Filter reports:
        [-A afterdate]    Only report backups AFTER afterdate
        [-B beforedate]   Only report backups BEFORE beforedate
        [-F]              Full report: shows events when files stayed the same
-       [-I]              Ignore filepattern arguments that mathc directories
+       [-I]              Ignore filepattern arguments that match directories
+       [-N]              Do not show any files that have never changed
 
 About dates: They can be specified as:
    2013        whole year
@@ -100,6 +104,8 @@ my $IGNORE_DIRS=0;    # -I
 my $AFTER_DATE="";    # -A
 my $BEFORE_DATE="";   # -B
 my $DIFF_COMM="";     # -c
+my $SHOW_STATS=0;     # -S
+my $NO_UNCHANGED=0;   # -N
 
 ##############################
 # Parse command-line options #
@@ -107,7 +113,7 @@ my $DIFF_COMM="";     # -c
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@ABDFIc])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@ABDFIcSN])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
@@ -126,6 +132,8 @@ for (;@ARGV;) {
     $BEFORE_DATE=$arg                            if $opt eq 'B';
     $AFTER_DATE=$arg                             if $opt eq 'A';
     $DIFF_COMM=$arg                              if $opt eq 'c';
+    $SHOW_STATS = 1                              if $opt eq 'S';
+    $NO_UNCHANGED = 1                            if $opt eq 'N';
 
     shift;
 }
@@ -296,6 +304,7 @@ sub GenerateCoreReport {
     my $ver_report   = "";
     my $prev_base    = "";
 
+    my $keyword_dist = {}; # count each kw appearances
     foreach my $base (@$versions) {
         my $f2stat     = $base2f2stat->{$base};
         my $stat       = $f2stat->{$file};  # can be undef, or empty array, or array with stat info
@@ -321,7 +330,7 @@ sub GenerateCoreReport {
           }
         }
 
-        if ($FULL_REPORT || ! ($keyword eq "SAME")) {
+        if ($FULL_REPORT || ! ($keyword eq "SAME" || $keyword eq "-")) {
           $ver_report .= sprintf "    %-4s %s\n", $keyword,$base;
           if ($diff_out) {
              $ver_report .= "* * * Start Of Diff * * *\n" .
@@ -330,9 +339,28 @@ sub GenerateCoreReport {
           }
         }
 
+        $keyword      = "-" if $keyword eq "DEL"; # change appearance 
         $prevstat     = $stat;
         $prev_keyword = $keyword;
         $prev_base    = $base;
+
+        $keyword_dist->{$keyword eq "1ST" ? "SAME" : $keyword}++; # stats
+    }
+
+    if ($SHOW_STATS) {
+        my $statline = "";
+        foreach my $kw ( "SAME", "CHG", "NEW", "-" ) {
+            my $count = $keyword_dist->{$kw} || 0;
+            next unless $count;
+            $statline .= ", " if $statline;
+            my $pretty_kw = $kw eq '-' ? 'MISS' : $kw;
+            $statline .= "$pretty_kw x $count";
+        }
+        $ver_report = "  Stat: $statline\n" . $ver_report;
+    }
+
+    if ($NO_UNCHANGED && scalar(keys %$keyword_dist) == 1 && ($keyword_dist->{'SAME'} || 0) == @$versions) {
+        $ver_report = ""; # zap
     }
 
     if ($FULL_REPORT || $ver_report ne "") {
