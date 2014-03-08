@@ -39,12 +39,13 @@ use Date::Manip;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 1.1 2007/11/08 18:40:36 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 2.0 2007/11/08 18:40:36 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
 my $USER=getpwuid($<) || getlogin || die "Can't find USER from environment!\n";
+my $HOME=(getpwuid($<))[7] || $ENV{'HOME'} || die "Can't find HOME ?!?\n";
 
 #########
 # Usage #
@@ -54,20 +55,22 @@ sub Usage { # private
     print <<USAGE;
 $BASENAME $VERSION
 
-Usage: $BASENAME command [options] dbfile [inc_base] [inc_base...]
+Usage: $BASENAME command [options] [-F dbfile] [inc_base] [inc_base...]
 
 Options:
 
   * Select incremental backup location:
        [-D dir]          Directory of all incremental backups
 
+  * Select the DB file
+       [-F dbfile]       The database file. By default: "\$HOME/.db_inc_du.tab"
+
   * Commands:
 
-       update dbfile inc_base [inc_base...]
+       update inc_base [inc_base...]
           -> Will update the database file 'dbfile' in situ by scanning the inc_base(s)
-             Note: will purge ALL entries that do not match at least one inc_base !
 
-       show   dbfile [inc_base] [inc_base...]
+       show   [inc_base] [inc_base...]
           -> Will show the used space for all the revisions inc_base.
 
   * Options for 'show' command:
@@ -124,7 +127,7 @@ my $PURGE_ALL=0;                    # -P
 my $SHOW_HISTO=0;                   # -H
 
 my $COMMAND=(@ARGV > 0 && $ARGV[0] =~ /update|show/i) ? uc(shift(@ARGV)) : "";
-my $DBFILE="";
+my $DBFILE="$HOME/.db_inc_du.tab";
 
 ##############################
 # Parse command-line options #
@@ -132,11 +135,11 @@ my $DBFILE="";
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@PDABkhrmMH])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@FPDABkhrmMH])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
-    if ($opt =~ /[DABmM]/ && $arg eq "") {
+    if ($opt =~ /[FDABmM]/ && $arg eq "") {
         if (@ARGV < 2) {
             print "Argument required for option \"$opt\".\n";
             exit 1;
@@ -155,6 +158,7 @@ for (;@ARGV;) {
     $MAX_SIZE=&ValidSize($arg)                   if $opt eq 'M';
     $PURGE_ALL=1                                 if $opt eq 'P';
     $SHOW_HISTO=1                                if $opt eq 'H';
+    $DBFILE=$arg                                 if $opt eq 'F';
     shift;
 }
 
@@ -164,9 +168,8 @@ for (;@ARGV;) {
 
 # We support invoking the program with the command before or after the options...
 
-&Usage if ($COMMAND eq "" && @ARGV < 2) || @ARGV < 1;
+&Usage if $COMMAND eq "" && @ARGV < 1;
 $COMMAND ||= uc shift;
-$DBFILE=shift;
 our @BASES = @ARGV; # and they belong to you.
 
 if ($COMMAND !~ /^(update|show)$/i) {
@@ -176,6 +179,8 @@ if ($COMMAND !~ /^(update|show)$/i) {
 $AFTER_DATE  = &ValidateDate($AFTER_DATE)  if $AFTER_DATE;
 $BEFORE_DATE = &ValidateDate($BEFORE_DATE) if $BEFORE_DATE;
 
+die "Cannot find DB file '$DBFILE'. Touch it if this is the first 'update' invokation.\n"
+    unless -f $DBFILE;
 
 ################
 # Trap Signals #
@@ -415,12 +420,7 @@ sub PruneOldRevs {
 sub ReadDB {
     my $file = shift;
     my $db = {};
-    my $fh = IO::File->new($file,"r");
-    if (!$fh) {
-        die "Cannot read DB file '$file': $!\n" if $COMMAND ne "update";
-        print "No DB '$file' found... will be created.\n" if $DEBUG;
-        return $db;
-    }
+    my $fh = IO::File->new($file,"r") or die "Cannot find DB file '$file': $!\n";
     while (my $line = <$fh>) {
         next if $line =~ /^\s*$|^\s*#/;
         my ($space,$rev,$d1,$d2) = ($line =~ /^(\d+)\t(\S+)\t?(\S*)\t?(\S*)\s*$/);
