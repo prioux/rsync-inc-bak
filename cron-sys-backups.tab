@@ -16,10 +16,10 @@ BACKUP_PREFIX="${SHOSTNAME}_"
 # Name       Directory        r-i-b.pl options
 #----------- ---------------- -------------------------------------------------------------------------
 etc          /etc
-usr_local    /usr/local       -x '--exclude=bic'
-home         /home            -x '--exclude=mero --exclude=prioux --exclude=nkassis --exclude="*/.ssh"'
+usr_local    /usr/local
+home         /home            -x '--exclude="*/.ssh"'
 root         /root            -x '--exclude=".ssh"'
 var_www      /var/www
-var_lib      /var/lib
+#var_lib      /var/lib         -x '--exclude="mysql"'
 var_log      /var/log
 
