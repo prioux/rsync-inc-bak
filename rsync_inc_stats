@@ -38,7 +38,7 @@ use Date::Manip;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 1.0 2007/11/08 18:40:36 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 1.1 2014/05/07 00:00:00 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -242,14 +242,30 @@ sub GatherStats {
         # Number of files transferred: 91
         # Total file size: 1031860036 bytes
         # Total transferred file size: 10939485 bytes
+        #
+        # OR with commas; note that the files transfered are on two lines now
+        #
+        # Number of files: 2,056 (reg: 994, dir: 213, link: 849)
+        # Number of created files: 310 (reg: 184, dir: 16, link: 110)
+        # Number of regular files transferred: 495
+        # Total file size: 2,524,650 bytes
+        # Total transferred file size: 1,709,440 bytes
 
-        my ($totf) = ($out =~ /Number of files: (\d+)/);
-        my ($incf) = ($out =~ /Number of files transferred: (\d+)/);
-        my ($tots) = ($out =~ /Total file size: (\d+)/);
-        my ($incs) = ($out =~ /Total transferred file size: (\d+)/);
+        my ($totf) = ($out =~ /Number of files: ([\d,]+)/);
+        my ($tots) = ($out =~ /Total file size: ([\d,]+)/);
+        my ($incs) = ($out =~ /Total transferred file size: ([\d,]+)/);
 
-        die "Can't parse rsync out:\n$out\n"
-          if ! defined($totf) || ! defined($incf) || ! defined($tots) || ! defined($incs);
+        die "Can't parse rsync output in file '$rsyncout_file':\n$out\n"
+          if ! defined($totf) || ! defined($tots) || ! defined($incs);
+        $totf =~ s/,//g; $tots =~ s/,//g; $incs =~ s/,//g;
+
+        # We get either incf, or (cfil and rfil)
+        my ($incf) = ($out =~ /Number of files transferred: ([\d,]+)/);
+        my ($cfil) = ($out =~ /Number of created files: ([\d,]+)/);
+        my ($rfil) = ($out =~ /Number of regular files transferred:: ([\d,]+)/);
+        $incf ||= "0"; $cfil ||= "0"; $rfil ||= "0";
+        $incf =~ s/,//g; $cfil =~ s/,//g; $rfil =~ s/,//g;
+        $incf ||= $cfil + $rfil;
 
         # mindstorm_root.2013-08-06T052612.rsync_log
         my ($tstamp) = ($rsyncout_file =~ /(\d\d\d\d-\d\d-\d\d)T\d\d:?\d\d:?\d\d/);
