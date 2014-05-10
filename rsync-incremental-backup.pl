@@ -40,7 +40,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 2.2.1 2014/04/05 16:51:34 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 2.2.2 2014/04/05 16:51:34 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -449,7 +449,7 @@ my $pretty_tot_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$ORIG_DEST_USED_K));
 
 info "Total time for rsync backup and tree generation: ",(time-$starttime), " seconds.\n";
 info "Total time for erasing, backup and tree generation: ",((time-$starttime)+$time_to_erase), " seconds.\n" if $time_to_erase > 0;
-info "Used disk space deltas (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
+info "Used disk space deltas for '$BAK_NAME' (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
 info "All done. Exiting.\n";
 exit 0;
 
