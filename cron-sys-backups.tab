@@ -21,5 +21,6 @@ home         /home            -x '--exclude="*/.ssh"'
 root         /root            -x '--exclude=".ssh"'
 var_www      /var/www
 #var_lib      /var/lib         -x '--exclude="mysql"'
+cron         /var/spool/cron
 var_log      /var/log
 

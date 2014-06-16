@@ -74,6 +74,7 @@ Options:
        [-F]              Full report: shows events when files stayed the same
        [-I]              Ignore filepattern arguments that match directories
        [-N]              Do not show any files that have never changed
+       [-M]              Do not show the 'Dump:' lines in report
 
 About dates: They can be specified as:
    2013        whole year
@@ -106,6 +107,7 @@ my $BEFORE_DATE="";   # -B
 my $DIFF_COMM="";     # -c
 my $SHOW_STATS=0;     # -S
 my $NO_UNCHANGED=0;   # -N
+my $NO_DUMP_LINES=0;  # -M
 
 ##############################
 # Parse command-line options #
@@ -113,7 +115,7 @@ my $NO_UNCHANGED=0;   # -N
 
 for (;@ARGV;) {
     # Add in the regex [] ALL single-character command-line options
-    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@ABDFIcSN])(.*)$/);
+    my ($opt,$arg) = ($ARGV[0] =~ /^-([\@ABDFIcSNM])(.*)$/);
     last if ! defined $opt;
     # Add in regex [] ONLY single-character options that
     # REQUIRE an argument, except for the '@' debug switch.
@@ -134,6 +136,7 @@ for (;@ARGV;) {
     $DIFF_COMM=$arg                              if $opt eq 'c';
     $SHOW_STATS = 1                              if $opt eq 'S';
     $NO_UNCHANGED = 1                            if $opt eq 'N';
+    $NO_DUMP_LINES = 1                           if $opt eq 'M';
 
     shift;
 }
@@ -331,7 +334,7 @@ sub GenerateCoreReport {
         }
 
         if ($FULL_REPORT || ! ($keyword eq "SAME" || $keyword eq "-")) {
-          $ver_report .= sprintf "    %-4s %s\n", $keyword,$base;
+          $ver_report .= sprintf "    %4s %s\n", $keyword,$base;
           if ($diff_out) {
              $ver_report .= "* * * Start Of Diff * * *\n" .
                             $diff_out .
@@ -356,7 +359,7 @@ sub GenerateCoreReport {
             my $pretty_kw = $kw eq '-' ? 'MISS' : $kw;
             $statline .= "$pretty_kw x $count";
         }
-        $ver_report = "  Stat: $statline\n" . $ver_report;
+        $ver_report = "    STAT $statline\n" . $ver_report;
     }
 
     if ($NO_UNCHANGED && scalar(keys %$keyword_dist) == 1 && ($keyword_dist->{'SAME'} || 0) == @$versions) {
@@ -364,7 +367,8 @@ sub GenerateCoreReport {
     }
 
     if ($FULL_REPORT || $ver_report ne "") {
-        return "  Dump: $core\n" . $ver_report;
+        $ver_report = "  Dump:  $core\n" . $ver_report unless $NO_DUMP_LINES;
+        return $ver_report;
     }
     return "";
 }

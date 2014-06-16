@@ -30,6 +30,7 @@
 require 5.00;
 use strict;
 use vars qw( $VERSION $RCS_VERSION );
+use Cwd;
 use IO::File;
 use IO::Dir;
 use POSIX ":sys_wait_h";
@@ -39,7 +40,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 2.2 2012/09/06 13:00:00 prioux Exp $';
+$RCS_VERSION='$Id: blahblah.pl,v 2.2.2 2014/04/05 16:51:34 prioux Exp $';
 ($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
@@ -432,8 +433,10 @@ if ($NO_TREE) {
         # TODO: autodetect support or not.
         MySystem("ssh -x $INCREMENTAL_USER_HOST \"cd $QUOTED_INCREMENTAL_ROOT/$BAK_NAME ; find . -print0 | cpio -p -d -l -m -0 ../$INC_BASE 2> /dev/null\"");
     } else { # PULL or LOCAL
+        my $cwd = getcwd();
         chdir("$INCREMENTAL_ROOT/$BAK_NAME") || MyDie "Can't cd to srcbase ?!?";
-        MySystem("find . -print | cpio -dplm ../$INC_BASE 2> /dev/null");
+        MySystem("find . -print0 | cpio -p -d -l -m -0 ../$INC_BASE 2> /dev/null");
+        chdir($cwd);
     }
     info "Incremental tree constructed in ", (time-$treestarttime), " seconds.\n";
     # IMPORTANT NOTE! At this point the CWD for this process has changed!
@@ -446,7 +449,7 @@ my $pretty_tot_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$ORIG_DEST_USED_K));
 
 info "Total time for rsync backup and tree generation: ",(time-$starttime), " seconds.\n";
 info "Total time for erasing, backup and tree generation: ",((time-$starttime)+$time_to_erase), " seconds.\n" if $time_to_erase > 0;
-info "Used disk space deltas (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
+info "Used disk space deltas for '$BAK_NAME' (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
 info "All done. Exiting.\n";
 exit 0;
 
