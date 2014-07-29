@@ -186,7 +186,7 @@ if ($check_results[0]->[1] == 0) {  # retcode of worst result is 0 means all of 
   }
   $message .= sprintf(" Latest=%.1f hours ago.",$recent);
   $message =~ s/\s*$//;
-  my $performance_data = " | NumBackups=$perf_numbacks NumFiles=$perf_numfiles Bytes=$perf_numbytes";
+  my $performance_data = " | NumBackups=$perf_numbacks NumFiles=$perf_numfiles Bytes=${perf_numbytes}B";
   print $message,$performance_data,"\n";
   exit 0;
 }
