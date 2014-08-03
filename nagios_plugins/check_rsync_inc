@@ -162,11 +162,10 @@ foreach my $name (@BAK_NAMES) {
 
 # Case where all are OK
 if ($check_results[0]->[1] == 0) {  # retcode of worst result is 0 means all of them are OK
-  my $perf_numbacks = 0;
   my $perf_numfiles = 0;
   my $perf_numbytes = 0;
   my $names    = join(",", map {                            $_->[0] } @check_results);
-  my $numbaks  = join(",", map { $perf_numbacks += $_->[3]; $_->[3] } @check_results);
+  my $numbaks  = join(",", map {                            $_->[3] } @check_results);
   my $numfiles = join(",", map { $perf_numfiles += $_->[5]; $_->[5] } @check_results);
   my $sizes    = join(",", map {                            $_->[6] } @check_results);
                            map { $perf_numbytes += $_->[7]          } @check_results;
@@ -186,7 +185,7 @@ if ($check_results[0]->[1] == 0) {  # retcode of worst result is 0 means all of 
   }
   $message .= sprintf(" Latest=%.1f hours ago.",$recent);
   $message =~ s/\s*$//;
-  my $performance_data = " | NumBackups=$perf_numbacks NumFiles=$perf_numfiles Bytes=${perf_numbytes}B";
+  my $performance_data = " | NumFiles=$perf_numfiles Bytes=${perf_numbytes}B";
   print $message,$performance_data,"\n";
   exit 0;
 }
