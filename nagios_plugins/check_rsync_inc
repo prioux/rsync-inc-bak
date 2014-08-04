@@ -307,9 +307,10 @@ sub CheckBackupByName {
   my $numfiles=0;
   my $pretty="?";
   my $bytes="0";
-  if ($rsynctail =~ /Total transferred file size: (\d+) bytes/i) {
-    $bytes  = $1;
-    ($numfiles) = ($rsynctail =~ /Number of files transferred: (\d+)/i); $numfiles += 0;
+  if ($rsynctail =~ /Total transferred file size: ([\d,]+) bytes/i) {
+    $bytes  = $1; $bytes =~ s/,//g; # some rsync outputs use commas in the report!!!
+    ($numfiles) = ($rsynctail =~ /Number of files transferred: ([\d,]+)/i);
+    $numfiles ||= 0; $numfiles =~ s/,//g; $numfiles += 0; # not always in output; may contain commas
     $pretty = "$bytes bytes";
     $pretty = sprintf("%3.1f Kbytes",$bytes/1_000)         if $bytes > 1_000;
     $pretty = sprintf("%3.1f Mbytes",$bytes/1_000_000)     if $bytes > 1_000_000;
