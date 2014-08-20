@@ -368,7 +368,7 @@ sub ComputeUsedSpaces {
                 my $dbsig  = "!" . $dbdeps->[1] . "!" . $dbdeps->[2] . "!";
                 $done = 0 if $cursig ne $dbsig;
             }
-            print "Exists: $iPlus/$num $rev\n" if $DEBUG && $done;
+            print "Exists: $iPlus/$num $rev\n" if $DEBUG >= 2 && $done;
             next if $done;
 
             # Run DU command
