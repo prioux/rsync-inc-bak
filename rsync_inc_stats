@@ -323,7 +323,7 @@ sub ReportTop {
   my ($header,$list,$valname) = @_;
 
   print "\n",
-        "==========$header==========\n";
+        "===========$header===========\n";
   
   my $printed   = 0;
   my %seen_base = ();
@@ -335,7 +335,7 @@ sub ReportTop {
     }
     my $entry        = $DIRECT_REPORT{"$base|$date"};
     my $val          = $entry->{$valname};
-    if ($valname =~ /s$/i) {
+    if ($valname =~ /s$/i) {  # 'tots' or 'incs'
       if      (!$BYTE_SIZE && $val >= 1073741824) {
         $val = sprintf("%.2f Gibytes",$val / 1073741824);
       } elsif (!$BYTE_SIZE && $val >= 1048576) {
@@ -347,8 +347,10 @@ sub ReportTop {
       } else {
        $val = sprintf("%d",$val); # pure bytes
       }
+    } else { # 'totf' or 'incf'
+       $val = "$val files";
     }
-    printf "%10s %-28s %14s\n",$date,$base,$val;
+    printf "%10s %-29s %15s\n",$date,$base,$val;
     $printed++;
   }
     
