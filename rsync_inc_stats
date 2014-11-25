@@ -116,6 +116,8 @@ my $TOP_BASE_ONLY=0;
 my $BYTE_SIZE=0;
 my $SORT_ORDER="vbd";
 
+my @UNPARSABLE_RSYNC_OUT_FILES=(); # for warnings
+
 my $MIN_SIZE=0;
 my $MAX_SIZE=999_999_999_999_999;
 my $MIN_NUMF=0;
@@ -255,8 +257,11 @@ sub GatherStats {
         my ($tots) = ($out =~ /Total file size: ([\d,]+)/);
         my ($incs) = ($out =~ /Total transferred file size: ([\d,]+)/);
 
-        die "Can't parse rsync output in file '$rsyncout_file':\n$out\n"
-          if ! defined($totf) || ! defined($tots) || ! defined($incs);
+        if (! defined($totf) || ! defined($tots) || ! defined($incs)) {
+          #die "Can't parse rsync output in file '$rsyncout_file':\n$out\n"
+          push(@UNPARSABLE_RSYNC_OUT_FILES,$rsyncout_file);
+          next;
+        }
         $totf =~ s/,//g; $tots =~ s/,//g; $incs =~ s/,//g;
 
         # We get either incf, or (cfil and rfil)
@@ -309,6 +314,13 @@ sub DumpReport {
   my $by_incf = &AllKeysByValue('incf');
   my $by_tots = &AllKeysByValue('tots');
   my $by_incs = &AllKeysByValue('incs');
+
+  if (@UNPARSABLE_RSYNC_OUT_FILES) {
+    print "Warning: some rsync output files were unparsable. They might be truncated.\n";
+    foreach my $file (sort @UNPARSABLE_RSYNC_OUT_FILES) {
+      print "Unparsable: $file\n";
+    }
+  }
 
   foreach my $report (@REPORT_ORDER) {
     &ReportTop('= Top Usage By Total Files =======', $by_totf, 'totf') if $report eq 'totf';
