@@ -20,7 +20,7 @@ usr_local    /usr/local
 home         /home            -x '--exclude="*/.ssh"'
 root         /root            -x '--exclude=".ssh"'
 var_www      /var/www
-#var_lib      /var/lib         -x '--exclude="mysql" --exclude="apt"'
+#var_lib      /var/lib         -x '--exclude="mysql" --exclude="apt" --exclude="yum*"'
 cron         /var/spool/cron
 var_log      /var/log
 
