@@ -18,10 +18,6 @@
 #          Copyright 2008 Pierre Rioux, All rights reserved.                 #
 #                                                                            #
 ##############################################################################
-#
-#    $Id$
-#
-#    $Log$
 
 ##########################
 # Initialization section #
@@ -29,7 +25,6 @@
 
 require 5.00;
 use strict;
-use vars qw( $VERSION $RCS_VERSION );
 use Cwd;
 use IO::File;
 use IO::Dir;
@@ -40,8 +35,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 2.2.2 2014/04/05 16:51:34 prioux Exp $';
-($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+my $VERSION='2.2.3';
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
@@ -239,7 +233,7 @@ if (defined($KEEPRECENT)) {
 ################
 
 sub SigCleanup { # private
-     info "ERROR: Exiting: received signal \"" . $_[0] . "\".\n";
+     info "ERROR: ($BAK_NAME) Exiting: received signal \"" . $_[0] . "\".\n";
      exit 20;
 }
 $SIG{'INT'}  = \&SigCleanup;
@@ -261,9 +255,15 @@ my $pmon = ('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','D
 my $timestamp = sprintf("%4d-%2.2d-%2.2dT%2.2d%2.2d%2.2d",$year,$mon,$mday,$hour,$min,$sec);
 
 info sprintf("%s %s starting on %s %d %s %4d at %2.2dh %2.2dm %2.2ds\n",$BASENAME,$VERSION,$pday,$mday,$pmon,$year,$hour,$min,$sec);
-info "Process ID   : $$\n";
-info "Timestamp    : $timestamp\n";
-info "Arguments    : " . join(" ",@ORIG_ARGS) . "\n";
+info "($BAK_NAME) Process ID   : $$\n";
+info "($BAK_NAME) Timestamp    : $timestamp\n";
+info "($BAK_NAME) Arguments    : " . join(" ",@ORIG_ARGS) . "\n";
+
+if ($FAKE_SUPER && $DEBUG > 0) {
+  info "WARN: ($BAK_NAME) For the -F (--fake-super) option to work, the destination file\n" .
+       "system must be mounted with the option 'user_xattr'. Otherwise\n" .
+       "it will be silently ignored and you will not back up your attributes.\n";
+}
 
 my $INC_BASE  = "$BAK_NAME.$timestamp";                   #        name.timestamp
 my $LOG_BASE  = "$INC_BASE.rsync_log";                    #        name.timestamp.rsync_log
@@ -273,7 +273,7 @@ if ($WITH_PIDFILE) {
     my $host = `hostname`; chomp $host;
     if ($BACKUP_MODE ne "PUSH") {
         $WITH_PIDFILE = "$INCREMENTAL_ROOT/$BAK_NAME.rsync_inc.pid";
-        my $fh = new IO::File(">$WITH_PIDFILE") or MyDie("Can't create PID file '$WITH_PIDFILE': $!");
+        my $fh = new IO::File(">$WITH_PIDFILE") or MyDie("($BAK_NAME) Can't create PID file '$WITH_PIDFILE': $!");
         print $fh "$$\@$host\n";
         $fh->close();
     } else {
@@ -290,7 +290,7 @@ if ($BACKUP_MODE eq "PUSH") {
     $fh->close();
     chomp @inc_entries;
 } else { # PULL or LOCAL
-    my $dh = IO::Dir->new($INCREMENTAL_ROOT) or MyDie "Can't read directory '$INCREMENTAL_ROOT': $!";
+    my $dh = IO::Dir->new($INCREMENTAL_ROOT) or MyDie "($BAK_NAME) Can't read directory '$INCREMENTAL_ROOT': $!";
     @inc_entries = $dh->read;
     $dh->close();
 }
@@ -299,7 +299,7 @@ if ($BACKUP_MODE eq "PUSH") {
 
 # Note: the most recent tree with the timestamp is always just like the main storage in $BAK_NAME
 # so it's not really an incremental backup.
-info "There is a total of " . (scalar(@inc_entries)) . " backups already present.";
+info "($BAK_NAME) There is a total of " . (scalar(@inc_entries)) . " backups already present.";
 
 # Clean up output directory of old backups
 my $ORIG_DEST_USED_K = &FindDestUsedKilobytes();
@@ -310,12 +310,12 @@ if (defined($KEEPNUM) || defined($KEEPRECENT)) {
   my ($to_erase,$to_keep) = &IdentifyOldBackups( \ @inc_entries ); # use $KEEPNUM and/or $KEEPRECENT
   my $num_to_erase = @$to_erase;
   if ($num_to_erase > 0) {
-      info "There are $num_to_erase old incremental backups to erase.";
+      info "($BAK_NAME) There are $num_to_erase old incremental backups to erase.";
   }
   my $erase_start = time;
   while (@$to_erase > 0) {
     my $old_erase = shift(@$to_erase);
-    info "Erasing old incremental tree entry '$old_erase'.";
+    info "($BAK_NAME) Erasing old incremental tree entry '$old_erase'.";
     if ($BACKUP_MODE eq "PUSH") {
         MySystem("ssh -x $INCREMENTAL_USER_HOST /bin/rm -rf $QUOTED_INCREMENTAL_ROOT/$old_erase $QUOTED_INCREMENTAL_ROOT/$old_erase.rsync_log");
     } else {
@@ -324,7 +324,7 @@ if (defined($KEEPNUM) || defined($KEEPRECENT)) {
   }
   $time_to_erase = time - $erase_start;
   if ($time_to_erase > 2) {
-      info "Time to erase backups: $time_to_erase seconds.";
+      info "($BAK_NAME) Time to erase backups: $time_to_erase seconds.";
   } else {
       $time_to_erase = 0;
   }
@@ -333,11 +333,11 @@ if (defined($KEEPNUM) || defined($KEEPRECENT)) {
 
 my $starttime = time;
 
-info "Performing rsync backups...\n";
-info "Source       : $SOURCE_FULL_SPEC\n";
-info "Work Area    : $INCREMENTAL_FULL_SPEC/$BAK_NAME\n";
-info "Incremental  : $INCREMENTAL_FULL_SPEC/$INC_BASE\n";
-info "Log file     : $INCREMENTAL_FULL_SPEC/$LOG_BASE\n";
+info "($BAK_NAME) Performing rsync backups...\n";
+info "($BAK_NAME) Source       : $SOURCE_FULL_SPEC\n";
+info "($BAK_NAME) Work Area    : $INCREMENTAL_FULL_SPEC/$BAK_NAME\n";
+info "($BAK_NAME) Incremental  : $INCREMENTAL_FULL_SPEC/$INC_BASE\n";
+info "($BAK_NAME) Log file     : $INCREMENTAL_FULL_SPEC/$LOG_BASE\n";
 
 # Child code; performs the backup
 my $LOCAL_LOG = $BACKUP_MODE eq "PUSH" ? "/tmp/$LOG_BASE.$$" : "$INCREMENTAL_ROOT/$LOG_BASE";
@@ -356,8 +356,8 @@ if (!$childpid) {
 }
 
 # Parent code; monitor the progress
-info "PID of rsync : $childpid\n";
-info "Waiting for backup to finish...\n";
+info "($BAK_NAME) PID of rsync : $childpid\n";
+info "($BAK_NAME) Waiting for backup to finish...\n";
 if (! $INTERACTIVE_OUT) {
     wait;
 } else {
@@ -375,8 +375,8 @@ if (! $INTERACTIVE_OUT) {
             $rsyncstarted = 1;
             if ($BACKUP_MODE ne "PUSH") {
                 my $fh = new IO::File "df -h $INCREMENTAL_ROOT | head -1|"
-                    or MyDie "Cannot open pipe to 'df': $!\n";
-                info "STAT: ",<$fh>;
+                    or MyDie "($BAK_NAME) Cannot open pipe to 'df': $!\n";
+                info "STAT: ($BAK_NAME) ",<$fh>;
                 $fh->close();
             }
             $cnt=0; # override
@@ -385,15 +385,15 @@ if (! $INTERACTIVE_OUT) {
         next unless $finished || ($cnt % 12 == 0); # we print our progress report every minute
         if ($BACKUP_MODE ne "PUSH") {
             my $fh = new IO::File "df -h $INCREMENTAL_ROOT | tail -n +2|"
-                or MyDie "Cannot open pipe to 'df': $!\n";
-            info "STAT: ",<$fh>;
+                or MyDie "($BAK_NAME) Cannot open pipe to 'df': $!\n";
+            info "STAT: ($BAK_NAME) ",<$fh>;
             $fh->close();
         }
         last if $finished;
     }
 }
 
-info "Finished rsync backup in ",(time-$starttime), " seconds.\n";
+info "($BAK_NAME) Finished rsync backup in ",(time-$starttime), " seconds.\n";
 
 # Check rsync output file
 my $fh = new IO::File "tail -10 $LOCAL_LOG|";
@@ -401,7 +401,7 @@ my $rsynctail = join("",<$fh>);
 $fh->close();
 unlink($LOCAL_LOG) if $BACKUP_MODE eq "PUSH";
 if ($rsynctail !~ /^total size is/m ) {
-    info "ERROR: rsync did not seem to complete successfully. Check log.";
+    info "ERROR: ($BAK_NAME) rsync did not seem to complete successfully. Check log.";
     exit 10;
 }
 
@@ -416,29 +416,29 @@ if ($BACKUP_MODE ne "PUSH") {
    $dest_exists = (@ok == 1 && $ok[0] =~ /OK-DIR/);
 }
 if (! $dest_exists) {
-    info "ERROR: Destination copy was not created?!?";
-    info "Exiting.";
+    info "ERROR: ($BAK_NAME) Destination copy was not created?!?";
+    info "($BAK_NAME) Exiting.";
     exit 10;
 }
 
 if ($NO_TREE) {
-    info "No incremental hardlink tree required for current snapshot '$INC_BASE'.\n"
+    info "($BAK_NAME) No incremental hardlink tree required for current snapshot '$INC_BASE'.\n"
 } else {
     # Create incremental tree
     my $treestarttime = time;
-    info "Making hardlink tree for current snapshot '$INC_BASE' ...";
+    info "($BAK_NAME) Making hardlink tree for current snapshot '$INC_BASE' ...";
     if ($BACKUP_MODE eq "PUSH") {
-        # Note that on MacOS X, the -0 option of cpio is not supported!
+        # Note that on MacOS X, the -0 option of cpio WAS not supported in old versions!
         # The find command's -print0 statement then need to be changed to -print
         # TODO: autodetect support or not.
         MySystem("ssh -x $INCREMENTAL_USER_HOST \"cd $QUOTED_INCREMENTAL_ROOT/$BAK_NAME ; find . -print0 | cpio -p -d -l -m -0 ../$INC_BASE 2> /dev/null\"");
     } else { # PULL or LOCAL
         my $cwd = getcwd();
-        chdir("$INCREMENTAL_ROOT/$BAK_NAME") || MyDie "Can't cd to srcbase ?!?";
+        chdir("$INCREMENTAL_ROOT/$BAK_NAME") || MyDie "($BAK_NAME) Can't cd to srcbase ?!?";
         MySystem("find . -print0 | cpio -p -d -l -m -0 ../$INC_BASE 2> /dev/null");
         chdir($cwd);
     }
-    info "Incremental tree constructed in ", (time-$treestarttime), " seconds.\n";
+    info "($BAK_NAME) Incremental tree constructed in ", (time-$treestarttime), " seconds.\n";
     # IMPORTANT NOTE! At this point the CWD for this process has changed!
 }
 
@@ -447,10 +447,10 @@ my $pretty_del_delta = &PrettySize(1024*($AFTER_DEL_USED_K-$ORIG_DEST_USED_K));
 my $pretty_bak_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$AFTER_DEL_USED_K));
 my $pretty_tot_delta = &PrettySize(1024*($AFTER_BAK_USED_K-$ORIG_DEST_USED_K));
 
-info "Total time for rsync backup and tree generation: ",(time-$starttime), " seconds.\n";
-info "Total time for erasing, backup and tree generation: ",((time-$starttime)+$time_to_erase), " seconds.\n" if $time_to_erase > 0;
-info "Used disk space deltas for '$BAK_NAME' (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
-info "All done. Exiting.\n";
+info "($BAK_NAME) Total time for rsync backup and tree generation: ",(time-$starttime), " seconds.\n";
+info "($BAK_NAME) Total time for erasing, backup and tree generation: ",((time-$starttime)+$time_to_erase), " seconds.\n" if $time_to_erase > 0;
+info "($BAK_NAME) Used disk space deltas (approx): $pretty_del_delta (Delete) + $pretty_bak_delta (Backup) = $pretty_tot_delta (Total)";
+info "($BAK_NAME) All done. Exiting.\n";
 exit 0;
 
 #############################
@@ -465,8 +465,8 @@ sub info {
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)
        = localtime(time);
     $year += 1900;  # Must ADD it! Always! See the doc!
-    #my $stamp = sprintf("%4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d",$year,$mon,$mday,$hour,$min,$sec);
-    my $stamp = sprintf("%2.2d:%2.2d:%2.2d",$hour,$min,$sec);
+    my $stamp = sprintf("%4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d",$year,$mon,$mday,$hour,$min,$sec);
+    #my $stamp = sprintf("%2.2d:%2.2d:%2.2d",$hour,$min,$sec);
     my @splitm = split(/\n/,$messages);
     foreach my $line (@splitm) {
        $line =~ s/^\s*//;
