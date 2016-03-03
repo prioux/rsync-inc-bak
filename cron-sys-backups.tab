@@ -1,8 +1,8 @@
 
-#
 # This file is used by ~root/cron-sys-backups.sh
 # to define which directories to backup using rsync-incremental-backup.pl
 #
+# Template by Pierre Rioux; editing needed after each installation.
 
 # Options for rsync-incremental-backup.pl
 BACKUP_RIB_OPTS="-F -P -K 14,1 -k 18"
