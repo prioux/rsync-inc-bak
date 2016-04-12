@@ -15,13 +15,9 @@
 #       Nothing herein is to be disclosed in any way without the prior       #
 #           express written permission of Pierre Rioux                       #
 #                                                                            #
-#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
+#          Copyright 2016 Pierre Rioux, All rights reserved.                 #
 #                                                                            #
 ##############################################################################
-#
-#    $Id$
-#
-#    $Log$
 
 ##########################
 # Initialization section #
@@ -29,7 +25,6 @@
 
 require 5.00;
 use strict;
-use vars qw( $VERSION $RCS_VERSION );
 use IO::File;
 use IO::Dir;
 sub MyDie;
@@ -38,8 +33,7 @@ sub MyDie;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 3.0 2012/06/08 18:40:36 prioux Exp $';
-($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+my $VERSION="2.0";
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
@@ -61,7 +55,7 @@ sub Usage { # private
 ##################################
 
 my $DEBUG=0;         # -v
-my @BAK_NAMES=();    # -n
+my @BAK_NAMES=();    # -n, or arguments after root dir !
 my $KEEPNUM=10;      # -k
 my $WARN_HOURS=2;    # -w
 my $CRIT_HOURS=4;    # -c
@@ -137,6 +131,16 @@ $dh->close();
 # Special token ":all" just takes all visible incremental backups names
 if (@BAK_NAMES == 1 && $BAK_NAMES[0] eq ":all") {
   @BAK_NAMES = grep(/^[\w\-]+$/ && -d "$INCREMENTAL_ROOT/$_", @ALL_ENTRIES);
+} else {  # allow parsing of "-n name1,name2,name3" with or without prefix
+  my @flat = ();
+  foreach my $names (@BAK_NAMES) {
+    my @split = split(/\s*,\s*/,$names);
+    if ($PREFIX) {
+      @split = map { s/^(\Q$PREFIX\E_)?/${PREFIX}_/; $_ } @split;
+    }
+    push(@flat,@split);
+  }
+  @BAK_NAMES=@flat; # cleaned up list
 }
 
 # No backup found?!?
@@ -160,15 +164,18 @@ foreach my $name (@BAK_NAMES) {
 @check_results = sort { $b->[1] <=> $a->[1] } @check_results; # sort by highest retcode: worst will be first!
 
 
+# Compile some performance data
+my $perf_numfiles = 0;
+my $perf_numbytes = 0;
+my $names    = join(",", map {                                                   $_->[0] } @check_results);
+my $numbaks  = join(",", map { $_->[3] || "unk"                                          } @check_results);
+my $numfiles = join(",", map { $perf_numfiles += $_->[5] if defined($_->[5]) && $_->[5] =~ /^\d+$/ ; $_->[5] || "unk" } @check_results);
+my $sizes    = join(",", map { $_->[6] || "unk"                                          } @check_results);
+                         map { $perf_numbytes += $_->[7] if $_->[7]                      } @check_results;
+my $performance_data = " | NumFiles=$perf_numfiles Bytes=${perf_numbytes}B";
+
 # Case where all are OK
 if ($check_results[0]->[1] == 0) {  # retcode of worst result is 0 means all of them are OK
-  my $perf_numfiles = 0;
-  my $perf_numbytes = 0;
-  my $names    = join(",", map {                            $_->[0] } @check_results);
-  my $numbaks  = join(",", map {                            $_->[3] } @check_results);
-  my $numfiles = join(",", map { $perf_numfiles += $_->[5]; $_->[5] } @check_results);
-  my $sizes    = join(",", map {                            $_->[6] } @check_results);
-                           map { $perf_numbytes += $_->[7]          } @check_results;
   my ($recent,$old) = (99999,0);
   map { my $timeago = $_->[4];
         $recent = $timeago if $timeago < $recent;
@@ -185,7 +192,6 @@ if ($check_results[0]->[1] == 0) {  # retcode of worst result is 0 means all of 
   }
   $message .= sprintf(" Latest=%.1f hours ago.",$recent);
   $message =~ s/\s*$//;
-  my $performance_data = " | NumFiles=$perf_numfiles Bytes=${perf_numbytes}B";
   print $message,$performance_data,"\n";
   exit 0;
 }
@@ -204,7 +210,7 @@ if (@check_results > 1) {
     } @check_results);
   $message .= " $summary"
 }
-print $message,"\n";
+print $message,$performance_data,"\n";
 exit $topret;
 
 
