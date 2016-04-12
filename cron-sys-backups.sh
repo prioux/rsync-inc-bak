@@ -5,9 +5,32 @@
 # This program reads a config file $HOME/cron-sys-backups.tab
 # and invokes rsync-incremental-backup.pl for each backup
 # defined in there.
+#
+# Improved April 2016
+# The tab file can now be given as argument.
+#
+# Usage:
+#
+# - To read $HOME/cron-sys-backups.tab and perform all backups in there:
+#
+#   cron-sys-backup.sh
+#
+# - To read $HOME/cron-sys-backups.tab and perform a single backup 'abc':
+#
+#   cron-sys-backup.sh abc
+#
+# - To read myownlist.tab and perform all backups in there:
+#
+#   cron-sys-backup.sh -f myownlist.tab
+#
+# - To read myownlist.tab and perform and perform a single backup 'abc':
+#
+#   cron-sys-backup.sh -f myownlist.tab abc
+
+VERSION="2.0"
 
 echo "INFO: [`date +%H:%M:%S`] ==================================================="
-echo "INFO: [`date +%H:%M:%S`] ======== Backup script starting `date +%Y-%m-%d` ========"
+echo "INFO: [`date +%H:%M:%S`] ====== Backup script $VERSION starting `date +%Y-%m-%d` ======"
 echo "INFO: [`date +%H:%M:%S`] ==================================================="
 
 # Only one instance
@@ -24,11 +47,19 @@ SHOSTNAME=`hostname -s`
 # Backup command
 BACKUP_COM="perl /usr/bin/rsync-incremental-backup.pl"
 
+# Tab file with lists of filesystems to backup
+BACKUP_LIST_FILE="$HOME/cron-sys-backups.tab"
+if test "X$1" == "X-f" -a -n "$2" ; then
+  BACKUP_LIST_FILE="$2"
+  shift; shift
+fi
+echo "INFO: [`date +%H:%M:%S`] Backup list file is $BACKUP_LIST_FILE"
 
 
-# =====================================================
-# === Options configurable in cron-sys-backups.tab ===
-# =====================================================
+
+# ================================================================
+# === These options are reconfigurable in cron-sys-backups.tab ===
+# ================================================================
 
 # Options for rsync-incremental-backup.pl
 BACKUP_RIB_OPTS="-F -P -K 14,1,9,17,25 -k 40"
@@ -39,18 +70,22 @@ BACKUP_DEST="rdiffbak@macduff.bic.mni.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
 # Prefix for backups names.
 BACKUP_PREFIX="${SHOSTNAME}_"
 
-# =====================================================
+# ================================================================
 
 
 
-# Read config file and configure.
-if ! test -r $HOME/cron-sys-backups.tab ; then
-  echo "ERROR: [`date +%H:%M:%S`] Cannot find $HOME/cron-sys-backups.tab"
+# Verify config file exists
+if ! test -r $BACKUP_LIST_FILE ; then
+  echo "ERROR: [`date +%H:%M:%S`] Cannot find table of filesystems to backup '$BACKUP_LIST_FILE'"
   exit 2
 fi
 
 # Read config file backup table and backup each directory
-cat $HOME/cron-sys-backups.tab | perl -ne 'print unless /^\s*$|^\s*#/' | while builtin read name dir opts ; do
+#
+# Lines that start with BACKUP_ are interpreted as variable assignements
+# All other lines specify a backup to perform:
+#   name path [options]
+cat $BACKUP_LIST_FILE | perl -ne 'print unless /^\s*$|^\s*#/' | while builtin read name dir opts ; do
   if test "X${name:0:7}" == "XBACKUP_" ; then   # if line begins with BACKUP_ like a variable assignment
     eval "$name $dir $opts"
     continue
