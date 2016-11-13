@@ -465,6 +465,7 @@ sub info {
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)
        = localtime(time);
     $year += 1900;  # Must ADD it! Always! See the doc!
+    $mon  += 1;
     my $stamp = sprintf("%4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d",$year,$mon,$mday,$hour,$min,$sec);
     #my $stamp = sprintf("%2.2d:%2.2d:%2.2d",$hour,$min,$sec);
     my @splitm = split(/\n/,$messages);
