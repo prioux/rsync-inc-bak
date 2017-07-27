@@ -8,7 +8,7 @@
 BACKUP_RIB_OPTS="-F -P -K 14,1 -k 18"
 
 # SSH user and path for system backups.
-BACKUP_DEST="rdiffbak@macduff.bic.mni.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
+BACKUP_DEST="rdiffbak@macduff.cbrain.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
 
 # Prefix for backups names.
 BACKUP_PREFIX="${SHOSTNAME}_"

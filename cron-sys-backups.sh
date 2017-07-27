@@ -65,7 +65,7 @@ echo "INFO: [`date +%H:%M:%S`] Backup list file is $BACKUP_LIST_FILE"
 BACKUP_RIB_OPTS="-F -P -K 14,1,9,17,25 -k 40"
 
 # SSH user and path for system backups.
-BACKUP_DEST="rdiffbak@macduff.bic.mni.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
+BACKUP_DEST="rdiffbak@macduff.cbrain.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
 
 # Prefix for backups names.
 BACKUP_PREFIX="${SHOSTNAME}_"
