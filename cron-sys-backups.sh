@@ -27,17 +27,25 @@
 #
 #   cron-sys-backup.sh -f myownlist.tab abc
 
-VERSION="2.0"
+VERSION="2.1"
 
-echo "INFO: [`date +%H:%M:%S`] ==================================================="
-echo "INFO: [`date +%H:%M:%S`] ====== Backup script $VERSION starting `date +%Y-%m-%d` ======"
-echo "INFO: [`date +%H:%M:%S`] ==================================================="
+# This function logs with a prefix similar in appearance to
+# what rsync-incremental-backup.pl use.
+function dolog {
+  level="$1"
+  message="$2"
+  echo "$level: [$(date "+%Y-%m-%d %H:%M:%S")] $message"
+}
+
+dolog "INFO" "====================================================="
+dolog "INFO" "============ Backup wrapper $VERSION starting ============"
+dolog "INFO" "====================================================="
 
 # Only one instance
 export PATH=/sbin:$PATH  # pidof is often located there
 PID=`pidof -x -o $$ -o %PPID $0`
 if [ -n "$PID" ] ; then
-  echo "ERROR: [`date +%H:%M:%S`] $0 already running."
+  dolog "ERROR" "$0 already running."
   exit 2
 fi
 
@@ -53,7 +61,7 @@ if test "X$1" == "X-f" -a -n "$2" ; then
   BACKUP_LIST_FILE="$2"
   shift; shift
 fi
-echo "INFO: [`date +%H:%M:%S`] Backup list file is $BACKUP_LIST_FILE"
+dolog "INFO" "Backup list file is $BACKUP_LIST_FILE"
 
 
 
@@ -76,7 +84,7 @@ BACKUP_PREFIX="${SHOSTNAME}_"
 
 # Verify config file exists
 if ! test -r $BACKUP_LIST_FILE ; then
-  echo "ERROR: [`date +%H:%M:%S`] Cannot find table of filesystems to backup '$BACKUP_LIST_FILE'"
+  dolog "ERROR" "Cannot find table of filesystems to backup '$BACKUP_LIST_FILE'"
   exit 2
 fi
 
@@ -92,11 +100,11 @@ cat $BACKUP_LIST_FILE | perl -ne 'print unless /^\s*$|^\s*#/' | while builtin re
   fi
   if test $# -gt 0 ; then
     if test "X$name" != "X$1" -a "X$BACKUP_PREFIX$name" != "X$1" -a "X$dir" != "X$1" ; then
-      echo "WARN: [`date +%H:%M:%S`] Skipping backup '$name', because not matching filtering argument."
+      dolog "WARN" "Skipping backup '$name', because not matching filtering argument."
       continue # skip backups not matching arg #1
     fi
   fi
-  echo "INFO: [`date +%H:%M:%S`] - - - - - - - - - - - - - - - - - - - - - - - - - -"
+  dolog "INFO" "- - - - - - - - - - - - - - - - - - - - - - - - - -"
   eval $BACKUP_COM $BACKUP_RIB_OPTS $opts -n ${BACKUP_PREFIX}"${name}" "$dir" $BACKUP_DEST < /dev/null
 done
 
