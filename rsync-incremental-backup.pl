@@ -35,7 +35,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-my $VERSION='2.2.3';
+my $VERSION='2.2.4';
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
@@ -82,7 +82,7 @@ my $WITH_PIDFILE=undef;    # -P
 my $NO_TREE=undef;         # -T
 my $FAKE_SUPER="";         # -F
 
-my $RSYNC_OPTS="-a -x -E -H --delete-excluded --delete --stats --out-format=\"%o %9l %n %L\""; # NOTE: monitoring code looks for '-a -x -E'
+my $RSYNC_OPTS="-a -x -E -H -S --delete-excluded --delete --stats --out-format=\"%o %9l %n %L\""; # NOTE: monitoring code looks for '-a -x -E'
 
 # Current state
 my $INTERACTIVE_IN  = (-t STDIN);
