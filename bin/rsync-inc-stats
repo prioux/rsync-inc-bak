@@ -2,21 +2,11 @@
 
 ##############################################################################
 #
-#                                 rsync_inc_stats.pl
+#                                 rsync-inc-stats
 #
 # DESCRIPTION:
 # Dumps stats from incremental backups.
 #
-##############################################################################
-
-##############################################################################
-#                                                                            #
-#                       CONFIDENTIAL & PROPRIETARY                           #
-#       Nothing herein is to be disclosed in any way without the prior       #
-#           express written permission of Pierre Rioux                       #
-#                                                                            #
-#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
-#                                                                            #
 ##############################################################################
 
 ##########################
@@ -25,7 +15,6 @@
 
 require 5.00;
 use strict;
-use vars qw( $VERSION $RCS_VERSION );
 use IO::File;
 use Data::Dumper;
 use Date::Manip;
@@ -34,8 +23,7 @@ use Date::Manip;
 umask 027;
 
 # Program's name and version number.
-$RCS_VERSION='$Id: blahblah.pl,v 1.1 2014/05/07 00:00:00 prioux Exp $';
-($VERSION) = ($RCS_VERSION =~ m#,v ([\w\.]+)#);
+our $VERSION   = "1.1";
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.

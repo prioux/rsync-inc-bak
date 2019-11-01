@@ -53,7 +53,7 @@ fi
 SHOSTNAME=`hostname -s`
 
 # Backup command
-BACKUP_COM="perl /usr/bin/rsync-incremental-backup.pl"
+BACKUP_COM="rsync-inc-bak"
 
 # Tab file with lists of filesystems to backup
 BACKUP_LIST_FILE="$HOME/cron-sys-backups.tab"
@@ -73,7 +73,7 @@ dolog "INFO" "Backup list file is $BACKUP_LIST_FILE"
 BACKUP_RIB_OPTS="-F -P -K 14,1,9,17,25 -k 40"
 
 # SSH user and path for system backups.
-BACKUP_DEST="rdiffbak@macduff.cbrain.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
+BACKUP_DEST="bakuser@thehostname.example.com:/data/backuproot/${SHOSTNAME}"
 
 # Prefix for backups names.
 BACKUP_PREFIX="${SHOSTNAME}_"

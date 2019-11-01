@@ -2,21 +2,11 @@
 
 ##############################################################################
 #
-#                                 rsync-incremental-backup.pl
+#                                 rsync-inc-bak
 #
 # DESCRIPTION:
 # Performs incremental backups using rsync.
 #
-##############################################################################
-
-##############################################################################
-#                                                                            #
-#                       CONFIDENTIAL & PROPRIETARY                           #
-#       Nothing herein is to be disclosed in any way without the prior       #
-#           express written permission of Pierre Rioux                       #
-#                                                                            #
-#          Copyright 2008 Pierre Rioux, All rights reserved.                 #
-#                                                                            #
 ##############################################################################
 
 ##########################
@@ -35,7 +25,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-my $VERSION='2.2.4';
+our $VERSION   = '2.2.4';
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.

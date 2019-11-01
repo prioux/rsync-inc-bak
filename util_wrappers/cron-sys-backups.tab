@@ -1,6 +1,6 @@
 
-# This file is used by ~root/cron-sys-backups.sh
-# to define which directories to backup using rsync-incremental-backup.pl
+# This file is used by cron-sys-backups.sh
+# to define which directories to backup using rsync-inc-bak
 #
 # Template by Pierre Rioux; editing needed after each installation.
 
@@ -8,7 +8,7 @@
 BACKUP_RIB_OPTS="-F -P -K 14,1 -k 18"
 
 # SSH user and path for system backups.
-BACKUP_DEST="rdiffbak@macduff.cbrain.mcgill.ca:/srv/cbrainBackups/${SHOSTNAME}"
+BACKUP_DEST="bakuser@thehostname.example.com:/data/backuproot/${SHOSTNAME}"
 
 # Prefix for backups names.
 BACKUP_PREFIX="${SHOSTNAME}_"
@@ -19,7 +19,7 @@ etc          /etc
 usr_local    /usr/local
 home         /home            -x '--exclude="*/.ssh"'
 root         /root            -x '--exclude=".ssh"'
-var_www      /var/www
+#var_www      /var/www
 #var_lib      /var/lib         -x '--exclude="mysql" --exclude="apt" --exclude="yum*"'
 cron         /var/spool/cron
 var_log      /var/log

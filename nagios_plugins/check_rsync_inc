@@ -2,21 +2,11 @@
 
 ##############################################################################
 #
-#                                 check_rsync_inc.pl
+#                                 check_rsync_inc
 #
 # DESCRIPTION:
 # Nagios module to check the state of a rsync-incremental-backup run.
 #
-##############################################################################
-
-##############################################################################
-#                                                                            #
-#                       CONFIDENTIAL & PROPRIETARY                           #
-#       Nothing herein is to be disclosed in any way without the prior       #
-#           express written permission of Pierre Rioux                       #
-#                                                                            #
-#          Copyright 2016 Pierre Rioux, All rights reserved.                 #
-#                                                                            #
 ##############################################################################
 
 ##########################
@@ -33,7 +23,7 @@ sub MyDie;
 umask 027;
 
 # Program's name and version number.
-my $VERSION="2.0";
+our $VERSION   = "2.0";
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
