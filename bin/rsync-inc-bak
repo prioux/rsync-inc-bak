@@ -25,7 +25,7 @@ use File::Basename;
 umask 027;
 
 # Program's name and version number.
-our $VERSION   = '2.2.4';
+our $VERSION   = '2.2.5';
 my ($BASENAME) = ($0 =~ /([^\/]+)$/);
 
 # Get login name.
@@ -340,7 +340,7 @@ if (!$childpid) {
       MySystem("scp -q $LOCAL_LOG $INCREMENTAL_USER_HOST:$QUOTED_INCREMENTAL_ROOT/$LOG_BASE");
     } else {
       my $source_full_spec_slash = $SOURCE_FULL_SPEC =~ m#:/$# ? $SOURCE_FULL_SPEC : "$SOURCE_FULL_SPEC/"; # prevents '//'
-      MySystem("rsync $RSYNC_OPTS $EXTRA_RSYNC_OPTS $source_full_spec_slash $QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $QUOTED_INCREMENTAL_ROOT/$LOG_BASE 2>&1");  # the slash is IMPORTANT after source
+      MySystem("rsync $RSYNC_OPTS $FAKE_SUPER $EXTRA_RSYNC_OPTS $source_full_spec_slash $QUOTED_INCREMENTAL_ROOT/$BAK_NAME > $QUOTED_INCREMENTAL_ROOT/$LOG_BASE 2>&1");  # the slash is IMPORTANT after source
     }
     exit 0;
 }
